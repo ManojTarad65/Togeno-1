@@ -77,14 +77,15 @@ export interface SignUpData {
 export async function signUp(data: SignUpData): Promise<AuthResponseData> {
   try {
     const response = await api.post<ApiSuccessResponse<AuthResponseData>>('/auth/signup', data);
+    const result = response.data?.data;
+    if (!result) throw new Error('Unexpected response from server. Please try again.');
 
-    // Store tokens if session is returned
-    if (response.data.data.session) {
-      localStorage.setItem('accessToken', response.data.data.session.accessToken);
-      localStorage.setItem('refreshToken', response.data.data.session.refreshToken);
+    if (result.session) {
+      localStorage.setItem('accessToken', result.session.accessToken);
+      localStorage.setItem('refreshToken', result.session.refreshToken);
     }
 
-    return response.data.data;
+    return result;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
@@ -98,14 +99,15 @@ export interface SignInData {
 export async function signIn(data: SignInData): Promise<AuthResponseData> {
   try {
     const response = await api.post<ApiSuccessResponse<AuthResponseData>>('/auth/login', data);
+    const result = response.data?.data;
+    if (!result) throw new Error('Unexpected response from server. Please try again.');
 
-    // Store tokens
-    if (response.data.data.session) {
-      localStorage.setItem('accessToken', response.data.data.session.accessToken);
-      localStorage.setItem('refreshToken', response.data.data.session.refreshToken);
+    if (result.session) {
+      localStorage.setItem('accessToken', result.session.accessToken);
+      localStorage.setItem('refreshToken', result.session.refreshToken);
     }
 
-    return response.data.data;
+    return result;
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }
