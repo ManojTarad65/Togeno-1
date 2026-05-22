@@ -695,21 +695,14 @@ class ProductService {
       throw ApiError.badRequest("Insufficient stock");
     }
 
-    // Find existing cart row matching user + product + size.
-    // Use maybeSingle() so 0 rows returns {data:null} rather than an error.
-    let existQuery = supabaseAdmin
+    // The unique constraint is on (user_id, product_id) only — no size column.
+    // Match the check to the constraint so we never race into a duplicate-key error.
+    const { data: existingItem, error: existError } = await supabaseAdmin
       .from("cart_items")
       .select("*")
       .eq("user_id", userId)
-      .eq("product_id", productId);
-
-    if (selectedSize) {
-      existQuery = existQuery.eq("selected_size", selectedSize);
-    } else {
-      existQuery = existQuery.is("selected_size", null);
-    }
-
-    const { data: existingItem, error: existError } = await (existQuery as any).maybeSingle();
+      .eq("product_id", productId)
+      .maybeSingle();
 
     if (existError) {
       logger.error("cart_items existence check failed", { error: existError.message, userId, productId, selectedSize });
