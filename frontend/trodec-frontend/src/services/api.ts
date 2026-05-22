@@ -1,12 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// API calls go through the Next.js /backend rewrite proxy (same-origin).
-// The rewrite is in next.config.ts:
-//   source: '/backend/:path*' → destination: API_URL/:path*
-//
-// The server-side env var API_URL (no NEXT_PUBLIC_ prefix) must be set in
-// your hosting environment. See next.config.ts for details.
-const API_BASE_URL = '/backend';
+// Call the backend API directly (cross-origin) so Hostinger/LiteSpeed's
+// reverse-proxy cannot strip response bodies. NEXT_PUBLIC_API_URL is baked
+// into the client bundle at build time. Falls back to localhost for local dev.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -82,7 +79,9 @@ async function getNewAccessToken(): Promise<string | null> {
       const refreshToken = safeGetItem('refreshToken');
       if (!refreshToken) return null;
 
-      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
+      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken }, {
+        headers: { 'Content-Type': 'application/json' },
+      });
       const { session } = response.data.data;
       if (!session) return null;
 
