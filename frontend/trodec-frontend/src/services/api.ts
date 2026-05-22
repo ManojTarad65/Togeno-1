@@ -17,18 +17,51 @@ export const api = axios.create({
 });
 
 // Public auth endpoints that must NOT include a Bearer token.
-// Sending a stale token on these routes can cause the production API/nginx
-// to return 400 before the handler even runs.
 const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/signup', '/auth/refresh', '/auth/google', '/auth/oauth/complete'];
 
-// Request interceptor to add auth token
+// ============================================
+// SSR-safe localStorage helpers
+// Axios interceptors run on the server during SSR in Next.js.
+// Accessing localStorage without a guard crashes with
+// "localStorage is not defined" in production.
+// ============================================
+
+function safeGetItem(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore quota / private browsing errors
+  }
+}
+
+function safeRemoveItem(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+// Request interceptor — attach Bearer token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Only attach tokens in the browser — no-op on the server
     if (typeof window !== 'undefined') {
       const url = config.url ?? '';
       const isPublicAuth = PUBLIC_AUTH_PATHS.some((p) => url.endsWith(p));
       if (!isPublicAuth) {
-        const token = localStorage.getItem('accessToken');
+        const token = safeGetItem('accessToken');
         if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -43,12 +76,12 @@ api.interceptors.request.use(
 let refreshPromise: Promise<string | null> | null = null;
 
 function redirectToLogin() {
-  if (globalThis.window !== undefined && globalThis.location.pathname !== '/login') {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    // Clear the Zustand persisted auth state so the next page load starts clean
-    localStorage.removeItem('trodec-auth');
-    globalThis.location.href = '/login';
+  // Only redirect in the browser
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    safeRemoveItem('accessToken');
+    safeRemoveItem('refreshToken');
+    safeRemoveItem('trodec-auth');
+    window.location.href = '/login';
   }
 }
 
@@ -57,15 +90,15 @@ async function getNewAccessToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refreshToken = safeGetItem('refreshToken');
       if (!refreshToken) return null;
 
       const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
       const { session } = response.data.data;
       if (!session) return null;
 
-      localStorage.setItem('accessToken', session.accessToken);
-      localStorage.setItem('refreshToken', session.refreshToken);
+      safeSetItem('accessToken', session.accessToken);
+      safeSetItem('refreshToken', session.refreshToken);
       return session.accessToken as string;
     } catch {
       return null;
@@ -101,7 +134,7 @@ api.interceptors.response.use(
   }
 );
 
-// API response types - standardized format: { success, message, data }
+// API response types
 export interface ApiSuccessResponse<T> {
   success: true;
   message: string;
@@ -116,7 +149,6 @@ export interface ApiErrorResponse {
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
-// Helper to extract error message
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const axiosError = error as AxiosError<ApiErrorResponse>;

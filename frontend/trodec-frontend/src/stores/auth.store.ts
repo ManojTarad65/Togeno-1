@@ -54,6 +54,39 @@ const initialState = {
 };
 
 // ============================================
+// SSR-safe localStorage storage adapter
+// Zustand persist calls getItem/setItem/removeItem during SSR on the server
+// where localStorage doesn't exist. This wrapper guards every access.
+// ============================================
+
+const ssrSafeLocalStorage = {
+  getItem: (name: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return localStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name: string, value: string): void => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(name, value);
+    } catch {
+      // quota exceeded or private browsing — silently ignore
+    }
+  },
+  removeItem: (name: string): void => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.removeItem(name);
+    } catch {
+      // ignore
+    }
+  },
+};
+
+// ============================================
 // Store
 // ============================================
 
@@ -90,7 +123,6 @@ export const useAuthStore = create<AuthState>()(
 
           // If no session returned, automatically sign in
           if (!result.session) {
-            // Sign in with the same credentials
             await get().signIn({
               email: data.email,
               password: data.password,
@@ -150,8 +182,6 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Network error, timeout, or server error.
           // Do NOT clear isAuthenticated — the session may still be valid.
-          // The user's persisted auth state is preserved; API calls will
-          // retry with the stored token and the interceptor handles refresh.
           set({ isLoading: false });
         }
       },
@@ -176,9 +206,12 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'trodec-auth',
-      storage: createJSONStorage(() => localStorage),
+      // FIX: Use SSR-safe storage adapter instead of bare `() => localStorage`.
+      // The bare version throws "localStorage is not defined" during SSR in
+      // production (Vercel runs Next.js server-side). The adapter returns null
+      // on the server and only accesses localStorage in the browser.
+      storage: createJSONStorage(() => ssrSafeLocalStorage),
       partialize: (state) => ({
-        // Only persist these fields
         user: state.user,
         profile: state.profile,
         expertDetails: state.expertDetails,

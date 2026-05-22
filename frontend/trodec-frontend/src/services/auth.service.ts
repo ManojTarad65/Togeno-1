@@ -74,6 +74,39 @@ export interface SignUpData {
   brandName?: string;
 }
 
+// ============================================
+// SSR-safe token helpers
+// All localStorage access is guarded with typeof window checks so these
+// functions are safe to call during SSR (they simply return null/no-op).
+// ============================================
+
+function getToken(key: 'accessToken' | 'refreshToken'): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function setToken(key: 'accessToken' | 'refreshToken', value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // private browsing / quota exceeded — ignore
+  }
+}
+
+function removeToken(key: 'accessToken' | 'refreshToken'): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export async function signUp(data: SignUpData): Promise<AuthResponseData> {
   try {
     const response = await api.post<ApiSuccessResponse<AuthResponseData>>('/auth/signup', data);
@@ -81,8 +114,8 @@ export async function signUp(data: SignUpData): Promise<AuthResponseData> {
     if (!result) throw new Error('Unexpected response from server. Please try again.');
 
     if (result.session) {
-      localStorage.setItem('accessToken', result.session.accessToken);
-      localStorage.setItem('refreshToken', result.session.refreshToken);
+      setToken('accessToken', result.session.accessToken);
+      setToken('refreshToken', result.session.refreshToken);
     }
 
     return result;
@@ -103,8 +136,8 @@ export async function signIn(data: SignInData): Promise<AuthResponseData> {
     if (!result) throw new Error('Unexpected response from server. Please try again.');
 
     if (result.session) {
-      localStorage.setItem('accessToken', result.session.accessToken);
-      localStorage.setItem('refreshToken', result.session.refreshToken);
+      setToken('accessToken', result.session.accessToken);
+      setToken('refreshToken', result.session.refreshToken);
     }
 
     return result;
@@ -113,7 +146,6 @@ export async function signIn(data: SignInData): Promise<AuthResponseData> {
   }
 }
 
-
 export async function signOut(): Promise<void> {
   try {
     await api.post('/auth/logout');
@@ -121,15 +153,15 @@ export async function signOut(): Promise<void> {
     // Continue with local logout even if API fails
     console.error('Logout API error:', getErrorMessage(error));
   } finally {
-    // Always clear local storage
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+    removeToken('accessToken');
+    removeToken('refreshToken');
   }
 }
 
-
 export async function getCurrentUser(): Promise<UserWithProfile | null> {
-  const token = localStorage.getItem('accessToken');
+  // Guard: on the server there are no tokens — return null immediately.
+  // This prevents the "localStorage is not defined" crash during SSR.
+  const token = getToken('accessToken');
   if (!token) return null;
 
   try {
@@ -138,19 +170,17 @@ export async function getCurrentUser(): Promise<UserWithProfile | null> {
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 401) {
-        // Definitively unauthorized — token is invalid or expired with no valid refresh
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        // Definitively unauthorized — token is invalid or expired
+        removeToken('accessToken');
+        removeToken('refreshToken');
         return null;
       }
-      // Network error, timeout, or server error — don't log the user out.
-      // The session may still be valid; let the caller decide what to do.
+      // Network error, timeout, or server error — don't log the user out
       throw error;
     }
     throw error;
   }
 }
-
 
 export async function getGoogleOAuthUrl(redirectTo: string): Promise<string> {
   try {
@@ -162,7 +192,6 @@ export async function getGoogleOAuthUrl(redirectTo: string): Promise<string> {
     throw new Error(getErrorMessage(error));
   }
 }
-
 
 export interface UpdateProfileData {
   fullName?: string;
@@ -221,8 +250,7 @@ export async function completeOAuth(): Promise<UserWithProfile> {
 }
 
 export function isAuthenticated(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  return !!localStorage.getItem('accessToken');
+  // FIX: guard typeof window so this is safe to call in SSR context
+  if (typeof window === 'undefined') return false;
+  return !!getToken('accessToken');
 }
