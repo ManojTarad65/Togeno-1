@@ -1,13 +1,13 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Route all API calls through the Next.js /backend rewrite proxy.
-// This avoids CORS, mixed-content, and mobile connectivity issues:
-//   browser → /backend/* (same-origin) → Next.js server → actual API
-// The rewrite is configured in next.config.ts:
-//   source: '/backend/:path*', destination: `${NEXT_PUBLIC_API_URL}/:path*`
+// API calls go through the Next.js /backend rewrite proxy (same-origin).
+// The rewrite is in next.config.ts:
+//   source: '/backend/:path*' → destination: API_URL/:path*
+//
+// The server-side env var API_URL (no NEXT_PUBLIC_ prefix) must be set in
+// your hosting environment. See next.config.ts for details.
 const API_BASE_URL = '/backend';
 
-// Create axios instance
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -16,47 +16,37 @@ export const api = axios.create({
   timeout: 30000,
 });
 
-// Public auth endpoints that must NOT include a Bearer token.
-const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/signup', '/auth/refresh', '/auth/google', '/auth/oauth/complete'];
+// Public auth endpoints — must NOT include a Bearer token
+const PUBLIC_AUTH_PATHS = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/refresh',
+  '/auth/google',
+  '/auth/oauth/complete',
+];
 
 // ============================================
 // SSR-safe localStorage helpers
-// Axios interceptors run on the server during SSR in Next.js.
-// Accessing localStorage without a guard crashes with
-// "localStorage is not defined" in production.
 // ============================================
 
 function safeGetItem(key: string): string | null {
   if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 
 function safeSetItem(key: string, value: string): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // ignore quota / private browsing errors
-  }
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
 }
 
 function safeRemoveItem(key: string): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
 // Request interceptor — attach Bearer token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Only attach tokens in the browser — no-op on the server
     if (typeof window !== 'undefined') {
       const url = config.url ?? '';
       const isPublicAuth = PUBLIC_AUTH_PATHS.some((p) => url.endsWith(p));
@@ -76,7 +66,6 @@ api.interceptors.request.use(
 let refreshPromise: Promise<string | null> | null = null;
 
 function redirectToLogin() {
-  // Only redirect in the browser
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     safeRemoveItem('accessToken');
     safeRemoveItem('refreshToken');
@@ -110,7 +99,7 @@ async function getNewAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-// Response interceptor — refresh token on 401, retry once
+// Response interceptor — refresh on 401, retry once
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -134,7 +123,6 @@ api.interceptors.response.use(
   }
 );
 
-// API response types
 export interface ApiSuccessResponse<T> {
   success: true;
   message: string;
@@ -154,9 +142,7 @@ export function getErrorMessage(error: unknown): string {
     const axiosError = error as AxiosError<ApiErrorResponse>;
     return axiosError.response?.data?.message || axiosError.message || 'An error occurred';
   }
-  if (error instanceof Error) {
-    return error.message;
-  }
+  if (error instanceof Error) return error.message;
   return 'An unexpected error occurred';
 }
 

@@ -4,20 +4,22 @@ import helmet from "helmet";
 import "@/types"; // Load Express type augmentation (req.user, req.profile)
 import { corsOptions } from "./config";
 import { errorHandler } from "./middleware";
-// import {
-//   healthRouter,
-//   authRouter,
-//   userRouter,
-//   communityRouter,
-// } from "./routes";
 import router from "./routes";
 
 const app = express();
 
 // Security middleware
-app.use(helmet());
+// Relax helmet's crossOriginResourcePolicy so assets load cross-origin
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
-// CORS configuration
+// Handle preflight OPTIONS requests before any other middleware
+// Hostinger's reverse proxy passes OPTIONS through — this ensures they
+// get a 200 with CORS headers before your auth middleware runs
+app.options('*', cors(corsOptions));
+
+// CORS — must come before routes
 app.use(cors(corsOptions));
 
 // Body parsing middleware
@@ -26,13 +28,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Hostinger health check probe
 app.get("/", (_req, res) => res.status(200).send("OK"));
+app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
 
 // Routes
 app.use("/api", router);
-// app.use("/api/health", healthRouter);
-// app.use("/api/auth", authRouter);
-// app.use("/api/users", userRouter);
-// app.use("/api/communities", communityRouter);
 
 // Error handling middleware
 app.use(errorHandler);
