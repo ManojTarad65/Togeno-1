@@ -14,12 +14,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// Handle preflight OPTIONS requests before any other middleware
-// Hostinger's reverse proxy passes OPTIONS through — this ensures they
-// get a 200 with CORS headers before your auth middleware runs
-app.options('*', cors(corsOptions));
-
-// CORS — must come before routes
+// CORS — must come before routes. cors() handles OPTIONS preflight automatically.
 app.use(cors(corsOptions));
 
 // Body parsing middleware
