@@ -14,6 +14,7 @@ import {
   SignInData,
   SignUpData,
 } from '@/services/auth.service';
+import { useCommunityStore } from './community.store';
 
 // ============================================
 // Types
@@ -154,6 +155,8 @@ export const useAuthStore = create<AuthState>()(
             ...initialState,
             isLoading: false,
           });
+          // Clear community membership so the next user doesn't see stale data
+          useCommunityStore.setState({ joinedCommunities: [], hasFetched: false, isLoading: false });
         }
       },
 

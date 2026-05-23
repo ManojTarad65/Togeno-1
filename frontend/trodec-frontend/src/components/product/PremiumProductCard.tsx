@@ -31,14 +31,14 @@ export function PremiumProductCard({
     >
       {/* Image */}
       <div className="relative aspect-[4/3] w-full p-2 overflow-hidden shrink-0 bg-[#0a0a0a]">
-        <div className="w-full h-full relative rounded-lg overflow-hidden bg-[#050505] skeleton">
+        <div className="w-full h-full relative rounded-lg overflow-hidden bg-white skeleton">
           {hasImage && product.images ? (
             <img
               src={product.images[0].imageUrl}
               alt={product.name}
               loading="lazy"
               decoding="async"
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-0"
+              className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105 opacity-0"
               onLoad={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
                 img.classList.remove("opacity-0");
