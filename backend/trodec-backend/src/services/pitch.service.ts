@@ -530,41 +530,41 @@ class PitchService {
         const [{ data: brandAddrRow }, { data: expertAddrRow }] = await Promise.all([
           supabaseAdmin
             .from("addresses")
-            .select("full_name, phone, address_line1, address_line2, city, state, postal_code, country")
+            .select("full_name, phone_number, address_line1, address_line2, city, state, postal_code, country")
             .eq("user_id", updatedPitch.brandId)
-            .eq("is_default", true)
+            .eq("is_default_shipping", true)
             .maybeSingle(),
           supabaseAdmin
             .from("addresses")
-            .select("full_name, phone, address_line1, address_line2, city, state, postal_code, country")
+            .select("full_name, phone_number, address_line1, address_line2, city, state, postal_code, country")
             .eq("user_id", updatedPitch.expertId)
-            .eq("is_default", true)
+            .eq("is_default_shipping", true)
             .maybeSingle(),
         ]);
 
         const fromAddress = brandAddrRow
           ? {
-              name: brandAddrRow.full_name,
-              phone: brandAddrRow.phone,
-              line1: brandAddrRow.address_line1,
-              line2: brandAddrRow.address_line2 ?? "",
-              city: brandAddrRow.city,
-              state: brandAddrRow.state,
-              postalCode: brandAddrRow.postal_code,
-              country: brandAddrRow.country,
+              name: (brandAddrRow as any).full_name,
+              phone: (brandAddrRow as any).phone_number,
+              line1: (brandAddrRow as any).address_line1,
+              line2: (brandAddrRow as any).address_line2 ?? "",
+              city: (brandAddrRow as any).city,
+              state: (brandAddrRow as any).state,
+              postalCode: (brandAddrRow as any).postal_code,
+              country: (brandAddrRow as any).country,
             }
           : { note: "Brand warehouse — to be filled by logistics" };
 
         const toAddress = expertAddrRow
           ? {
-              name: expertAddrRow.full_name,
-              phone: expertAddrRow.phone,
-              line1: expertAddrRow.address_line1,
-              line2: expertAddrRow.address_line2 ?? "",
-              city: expertAddrRow.city,
-              state: expertAddrRow.state,
-              postalCode: expertAddrRow.postal_code,
-              country: expertAddrRow.country,
+              name: (expertAddrRow as any).full_name,
+              phone: (expertAddrRow as any).phone_number,
+              line1: (expertAddrRow as any).address_line1,
+              line2: (expertAddrRow as any).address_line2 ?? "",
+              city: (expertAddrRow as any).city,
+              state: (expertAddrRow as any).state,
+              postalCode: (expertAddrRow as any).postal_code,
+              country: (expertAddrRow as any).country,
             }
           : { address: updatedPitch.shippingAddress ?? "Expert address on file" };
 
