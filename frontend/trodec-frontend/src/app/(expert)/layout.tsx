@@ -122,7 +122,14 @@ export default function ExpertLayout({
       onboarded = localStorage.getItem(flagKey) === "1";
     } catch { /* private mode — treat as not-onboarded */ }
 
-    const profileLooksReady = Boolean(expertDetails.bio);
+    // Consider profile ready if ANY non-default expert field is filled.
+    // Checking only bio would wrongly redirect existing experts who skipped that field.
+    const profileLooksReady = Boolean(
+      expertDetails.bio ||
+      (expertDetails.expertise && expertDetails.expertise.length > 0) ||
+      expertDetails.yearsOfExperience ||
+      expertDetails.linkedinUrl
+    );
     if (profileLooksReady && !onboarded) {
       try { localStorage.setItem(flagKey, "1"); } catch { /* ignore */ }
       onboarded = true;
