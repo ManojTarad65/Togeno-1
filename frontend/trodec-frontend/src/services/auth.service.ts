@@ -41,6 +41,15 @@ export interface BrandDetails {
   logoUrl: string | null;
   isVerified: boolean;
   verificationDate: string | null;
+  // GST / billing
+  gstNumber: string | null;
+  businessName: string | null;
+  registeredAddress: string | null;
+  billingState: string | null;
+  billingPincode: string | null;
+  billingEmail: string | null;
+  contactNumber: string | null;
+  panNumber: string | null;
 }
 
 export interface Session {
