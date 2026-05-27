@@ -43,7 +43,7 @@ class InvoiceController {
   getInvoice = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const brandId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const invoice = await invoiceService.getInvoice(brandId, id);
       res.json({ data: invoice });
     } catch (err) {
@@ -55,7 +55,7 @@ class InvoiceController {
   markDownloaded = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const brandId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       await invoiceService.markDownloaded(brandId, id);
       res.json({ success: true });
     } catch (err) {

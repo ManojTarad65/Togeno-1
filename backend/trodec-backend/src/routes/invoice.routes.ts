@@ -1,12 +1,11 @@
 import { Router } from "express";
-import { requireAuth } from "@/middleware/auth.middleware";
-import { requireRole } from "@/middleware/role.middleware";
+import { authenticate, requireRole } from "@/middleware";
 import { invoiceController } from "@/controllers/invoice.controller";
 
 const router = Router();
 
 // All invoice routes require an authenticated brand_admin
-router.use(requireAuth, requireRole(["brand_admin"]));
+router.use(authenticate, requireRole("brand_admin"));
 
 router.get("/orders", invoiceController.listInvoiceableOrders);
 router.get("/", invoiceController.listInvoices);
