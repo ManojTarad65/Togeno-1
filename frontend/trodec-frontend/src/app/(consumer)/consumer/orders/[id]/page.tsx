@@ -6,7 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, ArrowLeft, Package, MapPin, Calendar, CreditCard } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, ArrowLeft, Package, MapPin, Calendar, CreditCard, AlertTriangle } from "lucide-react";
 import Image from "next/image";
 import { toast } from "sonner";
 
@@ -16,6 +26,7 @@ export default function OrderDetailsPage() {
     const [order, setOrder] = useState<Order | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [cancelling, setCancelling] = useState(false);
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const orderId = params.id as string;
@@ -40,13 +51,17 @@ export default function OrderDetailsPage() {
         fetchOrder();
     }, [orderId]);
 
+    const cancellableStatuses = ["pending", "confirmed", "processing"];
+    const canCancel = order && cancellableStatuses.includes(order.status);
+
     const handleCancel = async () => {
         if (!order) return;
+        setShowCancelDialog(false);
         try {
             setCancelling(true);
             const updated = await OrderService.cancelOrder(order.id);
             setOrder(updated);
-            toast.success("Order cancelled successfully");
+            toast.success("Order cancelled. A refund will be processed if payment was made.");
         } catch {
             toast.error("Failed to cancel order. Please contact support.");
         } finally {
@@ -131,12 +146,12 @@ export default function OrderDetailsPage() {
                     <Badge className={`${getStatusColor(order.status)} text-white px-3 py-1 text-sm capitalize`}>
                         {order.status}
                     </Badge>
-                    {order.status === 'pending' && (
+                    {canCancel && (
                         <Button
                             variant="destructive"
                             size="sm"
                             disabled={cancelling}
-                            onClick={handleCancel}
+                            onClick={() => setShowCancelDialog(true)}
                         >
                             {cancelling ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Cancelling...</> : "Cancel Order"}
                         </Button>
@@ -266,6 +281,36 @@ export default function OrderDetailsPage() {
                    )}
                 </div>
             </div>
+
+            <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                <AlertDialogContent className="bg-[#0e0e0e] border border-[#1f1f1f] text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5 text-red-400" />
+                            Cancel this order?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-zinc-400 space-y-2">
+                            <span className="block">This cannot be undone. The following will happen immediately:</span>
+                            <ul className="list-disc list-inside space-y-1 text-sm">
+                                <li>Your order will be permanently cancelled</li>
+                                <li>If payment was made, a full refund will be initiated (5–7 business days)</li>
+                                <li>The shipment (if any) will be cancelled with the courier</li>
+                            </ul>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-transparent border-[#2a2a2a] text-zinc-300 hover:bg-white/5">
+                            Keep Order
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleCancel}
+                            className="bg-red-600 hover:bg-red-500 text-white"
+                        >
+                            Yes, Cancel Order
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
