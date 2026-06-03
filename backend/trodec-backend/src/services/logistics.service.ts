@@ -378,6 +378,32 @@ class ShiprocketClient {
   }
 
   /**
+   * Fetch label URL from Shiprocket order details — fallback when print/label returns 404.
+   */
+  async getLabelFromOrderDetails(shiprocketOrderId: string): Promise<string | null> {
+    try {
+      const resp = await this.get<Record<string, unknown>>(`/orders/show/${shiprocketOrderId}`);
+      logger.info("Shiprocket order details response", { shiprocketOrderId, resp: JSON.stringify(resp) });
+
+      // Try common response shapes Shiprocket uses
+      const data = (resp as any)?.data ?? resp;
+      const shipments: unknown[] = data?.shipments ?? data?.shipment ?? [];
+      for (const s of shipments) {
+        const label = (s as any)?.label ?? (s as any)?.label_url ?? (s as any)?.awb_label_url;
+        if (label && typeof label === "string" && label.startsWith("http")) return label;
+      }
+      // Also check top-level label fields
+      const topLevel = (resp as any)?.label_url ?? (resp as any)?.label ?? (data as any)?.label_url;
+      if (topLevel && typeof topLevel === "string" && topLevel.startsWith("http")) return topLevel;
+
+      return null;
+    } catch (err) {
+      logger.warn("Shiprocket order details fetch failed", { shiprocketOrderId, err });
+      return null;
+    }
+  }
+
+  /**
    * Cancel a Shiprocket order.
    */
   async cancelOrder(shiprocketOrderIds: string[]): Promise<void> {
@@ -777,22 +803,36 @@ class LogisticsService {
   async refreshLabel(shipmentId: string): Promise<string | null> {
     const { data, error } = await supabaseAdmin
       .from("shipments")
-      .select("shiprocket_shipment_id, awb_code, label_url")
+      .select("shiprocket_shipment_id, shiprocket_order_id, awb_code, label_url")
       .eq("id", shipmentId)
       .single();
 
     if (error || !data) throw ApiError.notFound("Shipment not found");
 
-    const row = data as { shiprocket_shipment_id: string | null; awb_code: string | null; label_url: string | null };
+    const row = data as {
+      shiprocket_shipment_id: string | null;
+      shiprocket_order_id: string | null;
+      awb_code: string | null;
+      label_url: string | null;
+    };
 
-    if (!row.shiprocket_shipment_id) {
-      throw ApiError.badRequest("No Shiprocket shipment ID — label cannot be generated");
+    logger.info("Refreshing label", { shipmentId, shiprocketShipmentId: row.shiprocket_shipment_id, shiprocketOrderId: row.shiprocket_order_id });
+
+    let labelUrl: string | null = null;
+
+    // Attempt 1: print/label with shipment_id
+    if (row.shiprocket_shipment_id) {
+      labelUrl = await shiprocketClient.generateLabel(row.shiprocket_shipment_id);
     }
 
-    const labelUrl = await shiprocketClient.generateLabel(row.shiprocket_shipment_id);
+    // Attempt 2: fetch from order details (fallback when print/label returns 404)
+    if (!labelUrl && row.shiprocket_order_id) {
+      logger.info("print/label failed, trying order details fallback", { shiprocketOrderId: row.shiprocket_order_id });
+      labelUrl = await shiprocketClient.getLabelFromOrderDetails(row.shiprocket_order_id);
+    }
 
     if (!labelUrl) {
-      throw ApiError.internal("Label not available yet. Check server logs for Shiprocket response details. Try again in a few minutes.");
+      throw ApiError.internal("Shiprocket label not available. The shipment may still be processing. Please check your Shiprocket dashboard directly.");
     }
 
     await supabaseAdmin
@@ -800,7 +840,7 @@ class LogisticsService {
       .update({ label_url: labelUrl })
       .eq("id", shipmentId);
 
-    logger.info("Label refreshed", { shipmentId, labelUrl });
+    logger.info("Label refreshed successfully", { shipmentId, labelUrl });
     return labelUrl;
   }
 
