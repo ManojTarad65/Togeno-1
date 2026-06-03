@@ -269,7 +269,7 @@ class InvoiceService {
       .select("order_id, orders!inner(id, order_number, status, total, created_at, shipping_name)")
       .eq("brand_id", brandId)
       .in("orders.status", ["confirmed", "processing", "shipped", "delivered"])
-      .order("orders.created_at", { ascending: false });
+      .order("created_at", { referencedTable: "orders", ascending: false });
 
     if (error) {
       logger.error("Failed to list invoiceable orders", { error: error.message });

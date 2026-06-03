@@ -195,8 +195,8 @@ export default function BrandInvoicesPage() {
       ]);
       setInvoices(inv);
       setOrders(ord);
-    } catch {
-      toast.error("Failed to load invoices");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to load invoices");
     } finally {
       setIsLoading(false);
     }
