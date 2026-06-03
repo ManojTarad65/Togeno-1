@@ -820,12 +820,17 @@ class LogisticsService {
 
     let labelUrl: string | null = null;
 
-    // Attempt 1: print/label with shipment_id
-    if (row.shiprocket_shipment_id) {
+    // Attempt 1: print/label with Shiprocket ORDER ID (Shiprocket quirk — label endpoint uses order_id as shipment_id)
+    if (row.shiprocket_order_id) {
+      labelUrl = await shiprocketClient.generateLabel(row.shiprocket_order_id);
+    }
+
+    // Attempt 2: print/label with stored shipment_id
+    if (!labelUrl && row.shiprocket_shipment_id) {
       labelUrl = await shiprocketClient.generateLabel(row.shiprocket_shipment_id);
     }
 
-    // Attempt 2: fetch from order details (fallback when print/label returns 404)
+    // Attempt 3: fetch from order details endpoint
     if (!labelUrl && row.shiprocket_order_id) {
       logger.info("print/label failed, trying order details fallback", { shiprocketOrderId: row.shiprocket_order_id });
       labelUrl = await shiprocketClient.getLabelFromOrderDetails(row.shiprocket_order_id);
