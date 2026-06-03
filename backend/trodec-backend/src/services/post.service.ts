@@ -268,8 +268,8 @@ class PostService {
       if (pitch.expertId !== expertId) {
         throw ApiError.forbidden("This pitch was not sent to you");
       }
-      if (pitch.status !== "accepted") {
-        throw ApiError.badRequest("Can only create posts for accepted pitches");
+      if (pitch.status !== "delivered") {
+        throw ApiError.badRequest("You can only publish a review after confirming product receipt");
       }
       if (pitch.postId) {
         throw ApiError.badRequest("A post already exists for this pitch");
