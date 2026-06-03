@@ -54,16 +54,21 @@ export interface BrandOrder {
   id: string;
   itemId?: string;
   orderNumber: string;
-  userId: string;
+  userId?: string;
   status: string;
-  total: number;
+  total?: number;
   createdAt: string;
-  shippingAddressId: string;
+  shippingAddressId?: string;
   productName?: string;
   productImage?: string;
+  productPrice?: number;
   quantity?: number;
   subtotal?: number;
   selectedSize?: string | null;
+  awbCode?: string | null;
+  labelUrl?: string | null;
+  courierName?: string | null;
+  shipmentStatus?: string | null;
 }
 
 // ============================================
@@ -129,7 +134,7 @@ export async function getBrandOrders(params?: {
   page?: number;
   limit?: number;
   status?: string;
-}): Promise<{ data: any[]; pagination: any }> {
+}): Promise<{ data: BrandOrder[]; pagination: { page: number; limit: number; total: number } }> {
   try {
     const response = await api.get<ApiSuccessResponse<any>>('/brands/me/orders', { params });
     return response.data.data;

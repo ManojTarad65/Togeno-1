@@ -279,11 +279,12 @@ class OrderService {
       const itemSubtotal = product.price * item.quantity;
       subtotal += itemSubtotal;
 
+      const primaryImage = product.images?.find(img => img.isPrimary) ?? product.images?.[0] ?? null;
       orderItems.push({
         product_id: product.id,
         brand_id: product.brandId,
         product_name: product.name,
-        product_image_url: null,
+        product_image_url: primaryImage?.imageUrl ?? null,
         product_price: product.price,
         quantity: item.quantity,
         subtotal: itemSubtotal,

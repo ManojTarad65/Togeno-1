@@ -83,6 +83,17 @@ router.get(
 );
 
 /**
+ * POST /pitches/:id/mark-shipped
+ * Brand manually marks sample as shipped (fallback when Shiprocket webhook doesn't fire)
+ */
+router.post(
+  "/:id/mark-shipped",
+  authenticate,
+  requireRole("brand_admin"),
+  pitchController.markShipped
+);
+
+/**
  * POST /pitches/:id/respond
  * Expert responds to a pitch (accept or decline)
  */

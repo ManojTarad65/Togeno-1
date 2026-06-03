@@ -212,6 +212,20 @@ class PitchController {
    * POST /pitches/:id/confirm-receipt
    * Expert confirms product has been received
    */
+  async markShipped(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const pitchId = req.params.id as string;
+      const pitch = await pitchService.markShipped(pitchId, req.user!.id);
+      sendSuccess(res, pitch, 200, "Pitch marked as shipped. The expert will be notified to confirm receipt.");
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async confirmReceipt(
     req: AuthenticatedRequest,
     res: Response,

@@ -56,6 +56,7 @@ export async function authenticate(
     if (profileError && profileError.code !== 'PGRST116') {
       // PGRST116 = no rows returned, which is ok for new users
       logger.error('Failed to fetch profile', { error: profileError.message });
+      throw ApiError.internal('Failed to load user profile');
     }
 
     if (profileRow) {
@@ -115,7 +116,7 @@ export async function requireVerifiedExpert(
       .eq('user_id', req.user!.id)
       .single();
 
-    if (error ?? !expertRow) {
+    if (error || !expertRow) {
       return next(ApiError.forbidden('Expert profile not found'));
     }
 
@@ -133,16 +134,34 @@ export async function requireVerifiedExpert(
  * Middleware to require verified brand status
  * Must be used after authenticate middleware
  */
-export function requireVerifiedBrand(
+export async function requireVerifiedBrand(
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
-): void {
-  if (!req.profile || req.profile.role !== 'brand_admin') {
-    return next(ApiError.forbidden('Brand admin access required'));
-  }
+): Promise<void> {
+  try {
+    if (!req.profile || req.profile.role !== 'brand_admin') {
+      return next(ApiError.forbidden('Brand admin access required'));
+    }
 
-  next();
+    const { data: brandRow, error } = await supabaseAdmin
+      .from('brand_details')
+      .select('is_verified')
+      .eq('id', req.user!.id)
+      .single();
+
+    if (error || !brandRow) {
+      return next(ApiError.forbidden('Brand profile not found'));
+    }
+
+    if (!brandRow.is_verified) {
+      return next(ApiError.forbidden('Your brand account is pending admin verification'));
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**

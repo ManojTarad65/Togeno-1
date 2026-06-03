@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
+  Check,
 } from "lucide-react";
 import { ProductAttributesCard } from "@/components/product/ProductAttributesCard";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ import {
   getShipmentStatusLabel,
   PitchShipment,
 } from "@/services/shipment.service";
+import { markPitchShipped } from "@/services/pitch.service";
 
 export default function BrandPitchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,6 +49,7 @@ export default function BrandPitchDetailPage() {
   const [shipmentLoading, setShipmentLoading] = useState(false);
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
+  const [markingShipped, setMarkingShipped] = useState(false);
 
   useEffect(() => {
     loadPitch();
@@ -113,6 +116,7 @@ export default function BrandPitchDetailPage() {
   const showShipmentSection =
     pitch.status === "accepted" ||
     pitch.status === "shipped" ||
+    pitch.status === "delivered" ||
     pitch.status === "posted" ||
     pitch.status === "completed";
 
@@ -368,6 +372,47 @@ export default function BrandPitchDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-white leading-relaxed">{pitch.expertResponse}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mark as Shipped fallback — shown when accepted but webhook hasn't fired */}
+      {pitch.status === "accepted" && (
+        <Card className="bg-[#0b0b0b] border border-amber-500/20">
+          <CardContent className="pt-5">
+            <div className="flex items-start gap-3">
+              <Truck className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-white font-semibold text-sm mb-1">Sample shipment pending</p>
+                <p className="text-zinc-400 text-xs mb-4">
+                  A sample shipment was created automatically. If you've physically dispatched the product but the tracking hasn't updated, use this to notify the expert.
+                </p>
+                <Button
+                  onClick={async () => {
+                    setMarkingShipped(true);
+                    try {
+                      const updated = await markPitchShipped(id);
+                      setPitch((prev) => prev ? { ...prev, status: updated.status } : prev);
+                      toast.success("Marked as shipped. The expert can now confirm receipt.");
+                      loadShipment();
+                    } catch (err: any) {
+                      toast.error(err.message ?? "Failed to mark as shipped");
+                    } finally {
+                      setMarkingShipped(false);
+                    }
+                  }}
+                  disabled={markingShipped}
+                  className="bg-amber-500 hover:bg-amber-400 text-black font-semibold"
+                >
+                  {markingShipped ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4 mr-2" />
+                  )}
+                  Mark as Shipped
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

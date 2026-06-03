@@ -187,10 +187,10 @@ class BrandController {
       if (productIds.length > 0) {
         const { data: orderItems } = await supabaseAdmin
           .from('order_items')
-          .select('quantity, product_price, subtotal')
+          .select('order_id, quantity, product_price, subtotal')
           .in('product_id', productIds);
 
-        totalOrders = orderItems?.length || 0;
+        totalOrders = new Set(orderItems?.map(i => i.order_id)).size;
         totalRevenue = orderItems?.reduce((sum, item) => sum + (item.subtotal || 0), 0) || 0;
       }
 
@@ -208,8 +208,8 @@ class BrandController {
     try {
       const brandId = req.user!.id;
       const { page = '1', limit = '20', status } = req.query as any;
-      const pageNum = parseInt(page);
-      const limitNum = parseInt(limit);
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.max(1, parseInt(limit) || 20);
       const offset = (pageNum - 1) * limitNum;
 
       const { data: products } = await supabaseAdmin
@@ -250,19 +250,50 @@ class BrandController {
         return next(error);
       }
 
-      const orders = data?.map((item: any) => ({
-        id: item.order_id,
-        itemId: item.id,
-        orderNumber: item.orders?.order_number,
-        status: item.orders?.status,
-        total: item.orders?.total,
-        createdAt: item.orders?.created_at,
-        productName: item.product_name,
-        productPrice: item.product_price,
-        quantity: item.quantity,
-        subtotal: item.subtotal,
-        selectedSize: item.selected_size ?? null,
-      })) || [];
+      const orderIds = (data ?? []).map((item: any) => item.order_id).filter(Boolean);
+
+      // Batch-fetch shipments for all returned orders in a single query
+      let shipmentMap: Record<string, { awb_code: string | null; label_url: string | null; carrier: string | null; status: string | null }> = {};
+      if (orderIds.length > 0) {
+        const { data: shipmentRows } = await supabaseAdmin
+          .from('shipments')
+          .select('order_id, awb_code, label_url, carrier, status')
+          .in('order_id', orderIds)
+          .eq('type', 'FORWARD')
+          .order('created_at', { ascending: false });
+
+        for (const s of shipmentRows ?? []) {
+          // Keep the latest shipment per order (results ordered newest-first, first write wins)
+          if (shipmentMap[s.order_id]) continue;
+          shipmentMap[s.order_id] = {
+            awb_code: s.awb_code,
+            label_url: s.label_url,
+            carrier: s.carrier,
+            status: s.status,
+          };
+        }
+      }
+
+      const orders = data?.map((item: any) => {
+        const shipment = shipmentMap[item.order_id] ?? null;
+        return {
+          id: item.order_id,
+          itemId: item.id,
+          orderNumber: item.orders?.order_number,
+          status: item.orders?.status,
+          total: item.orders?.total,
+          createdAt: item.orders?.created_at,
+          productName: item.product_name,
+          productPrice: item.product_price,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+          selectedSize: item.selected_size ?? null,
+          awbCode: shipment?.awb_code ?? null,
+          labelUrl: shipment?.label_url ?? null,
+          courierName: shipment?.carrier ?? null,
+          shipmentStatus: shipment?.status ?? null,
+        };
+      }) || [];
 
       sendSuccess(res, {
         data: orders,

@@ -18,6 +18,7 @@ export interface ShipmentRow {
   shiprocket_order_id: string | null;
   shiprocket_shipment_id: string | null;
   awb_code: string | null;
+  label_url: string | null;
   carrier: string;
   type: ShipmentType;
   status: ShipmentStatus;
@@ -38,6 +39,7 @@ export interface Shipment {
   shiprocketOrderId: string | null;
   shiprocketShipmentId: string | null;
   awbCode: string | null;
+  labelUrl: string | null;
   carrier: string;
   type: ShipmentType;
   status: ShipmentStatus;
@@ -59,6 +61,7 @@ export function toShipment(row: ShipmentRow): Shipment {
     shiprocketOrderId: row.shiprocket_order_id ?? null,
     shiprocketShipmentId: row.shiprocket_shipment_id ?? null,
     awbCode: row.awb_code ?? null,
+    labelUrl: row.label_url ?? null,
     carrier: row.carrier,
     type: row.type,
     status: row.status,
@@ -338,6 +341,22 @@ class ShiprocketClient {
   }
 
   /**
+   * Generate a shipping label PDF for a shipment and return the URL.
+   * Must be called after AWB is assigned. Returns null if generation fails.
+   */
+  async generateLabel(shiprocketShipmentId: string): Promise<string | null> {
+    try {
+      const resp = await this.post<{ label_url?: string }>("/orders/print/label", {
+        shipment_id: [shiprocketShipmentId],
+      });
+      return resp.label_url ?? null;
+    } catch (err) {
+      logger.warn("Shiprocket label generation failed", { shiprocketShipmentId, err });
+      return null;
+    }
+  }
+
+  /**
    * Auto-assign best courier to a shipment and return AWB.
    */
   async assignCourier(shipmentId: number): Promise<string> {
@@ -407,6 +426,7 @@ class LogisticsService {
     let shiprocketOrderId: string | null = null;
     let shiprocketShipmentId: string | null = null;
     let carrier = "Shiprocket";
+    let labelUrl: string | null = null;
 
     try {
       const to = toAddress as unknown as ShiprocketAddress;
@@ -427,6 +447,14 @@ class LogisticsService {
       carrier = result.courier;
 
       logger.info("Shiprocket forward order created", { orderId, trackingId, shiprocketOrderId });
+
+      // Generate shipping label now that AWB is assigned
+      if (shiprocketShipmentId && trackingId && !trackingId.startsWith("TRK-PENDING")) {
+        labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId);
+        if (labelUrl) {
+          logger.info("Shiprocket label generated", { orderId, labelUrl });
+        }
+      }
     } catch (err) {
       // If Shiprocket fails, generate a fallback tracking ID so the order isn't stuck
       logger.error("Shiprocket createForwardOrder failed, using fallback tracking", { orderId, err });
@@ -444,6 +472,7 @@ class LogisticsService {
         shiprocket_order_id: shiprocketOrderId,
         shiprocket_shipment_id: shiprocketShipmentId,
         awb_code: awbCode,
+        label_url: labelUrl,
         carrier,
         type: "FORWARD",
         status: "SHIPPED",

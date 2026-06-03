@@ -622,6 +622,40 @@ class PitchService {
   }
 
   /**
+   * Brand manually marks a sample as shipped (pitch: accepted → shipped).
+   * Used when Shiprocket webhook fails to fire or shipment was arranged outside the platform.
+   */
+  async markShipped(pitchId: string, brandId: string): Promise<Pitch> {
+    const pitch = await this.getPitch(pitchId);
+    if (!pitch) throw ApiError.notFound("Pitch not found");
+    if (pitch.brandId !== brandId) throw ApiError.forbidden("You can only update your own pitches");
+    if (pitch.status !== "accepted") {
+      throw ApiError.badRequest("Can only mark as shipped when pitch status is 'accepted'");
+    }
+
+    const { data: pitchRow, error } = await supabaseAdmin
+      .from("pitches")
+      .update({ status: "shipped", shipped_at: new Date().toISOString() })
+      .eq("id", pitchId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error("Failed to mark pitch as shipped", { error: error.message, pitchId });
+      throw ApiError.internal("Failed to update pitch status");
+    }
+
+    // Mirror to the sample shipment if one exists
+    await supabaseAdmin
+      .from("shipments")
+      .update({ status: "SHIPPED", shipped_at: new Date().toISOString() })
+      .eq("pitch_id", pitchId)
+      .eq("status", "PENDING");
+
+    return toPitch(pitchRow as PitchRow);
+  }
+
+  /**
    * Expert manually confirms product receipt (pitch: shipped → delivered)
    * Only after this can the expert publish a review/post for the pitch.
    */

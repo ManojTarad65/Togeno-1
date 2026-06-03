@@ -14,7 +14,8 @@ export {
   deleteCommunity,
   joinCommunity,
   leaveCommunity,
-  getCommunityMembers
+  getCommunityMembers,
+  getJoinedCommunities
 } from './communities.service';
 export type { Community, Category, CreateCommunityData, UpdateCommunityData, CommunityMember } from './communities.service';
 

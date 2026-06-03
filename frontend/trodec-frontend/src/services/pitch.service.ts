@@ -189,6 +189,19 @@ export async function confirmPitchReceipt(id: string): Promise<Pitch> {
 }
 
 /**
+ * Brand manually marks a pitch's sample shipment as shipped.
+ * Fallback for when Shiprocket webhook doesn't fire.
+ */
+export async function markPitchShipped(id: string): Promise<Pitch> {
+  try {
+    const response = await api.post<ApiSuccessResponse<Pitch>>(`/pitches/${id}/mark-shipped`);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+/**
  * Get all pitches (kept for backward compatibility - use getSentPitches or getReceivedPitches)
  */
 export async function getPitches(params?: {

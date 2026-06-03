@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, use } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowLeft, Loader2, Users, Edit, Calendar, Globe, X,
+  ArrowLeft, Loader2, Users, Edit, X,
   Star, ThumbsUp, Send, ChevronDown, ChevronUp,
   MessageSquare, Plus, ShoppingBag, ExternalLink, CheckCircle2,
 } from "lucide-react";
@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { getCommunityById, getCommunityMembers, CommunityMember, Community } from "@/services";
 import { PostService, PostWithDetails, CreatePostData } from "@/services/post.service";
+import { getReceivedPitches } from "@/services/pitch.service";
 import {
   PostDiscussion,
   getPostDiscussions,
@@ -359,19 +360,65 @@ export default function ExpertCommunityDetailPage({
   const [replyPostingDisc, setReplyPostingDisc] = useState<Record<string, boolean>>({});
 
   const [form, setForm] = useState({
-    productId: "", title: "", content: "",
+    productId: "", pitchId: "", title: "", content: "",
     rating: 5, pros: "", cons: "", verdict: "",
   });
 
-  // Pre-fill review form when arriving from consumer community page with ?productId=
+  type PitchedProduct = { id: string; pitchId: string; name: string; imageUrl?: string; price: number };
+  const [productSearch, setProductSearch] = useState("");
+  const [productOptions, setProductOptions] = useState<PitchedProduct[]>([]);
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+
+  // Pre-fill when arriving from consumer community page with ?productId=
   useEffect(() => {
-    const productId = searchParams.get("productId");
-    if (productId) {
-      setForm(f => ({ ...f, productId }));
+    const preProductId = searchParams.get("productId");
+    if (preProductId) {
       setShowCreateForm(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
+      // The pitch list will load via the showCreateForm effect; match by productId after load
+      setForm(f => ({ ...f, productId: preProductId }));
     }
   }, [searchParams]);
+
+  // Load delivered pitched products once when form opens
+  useEffect(() => {
+    if (!showCreateForm) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingProducts(true);
+        const result = await getReceivedPitches({ limit: 100 });
+        if (cancelled) return;
+        const delivered: PitchedProduct[] = result.data
+          .filter(p => p.status === "delivered" && p.product)
+          .map(p => ({
+            id: p.product!.id,
+            pitchId: p.id,
+            name: p.product!.name,
+            imageUrl: p.product!.imageUrl,
+            price: p.product!.price,
+          }));
+        setProductOptions(delivered);
+        // Auto-match if pre-filled productId came from query param
+        setForm(f => {
+          if (f.productId && !f.pitchId) {
+            const match = delivered.find(d => d.id === f.productId);
+            if (match) {
+              setProductSearch(match.name);
+              return { ...f, pitchId: match.pitchId };
+            }
+          }
+          return f;
+        });
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setLoadingProducts(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showCreateForm]);
 
   useEffect(() => {
     async function loadAll() {
@@ -428,13 +475,14 @@ export default function ExpertCommunityDetailPage({
   async function handleCreatePost(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!form.content.trim() || !form.productId) {
-      toast.error("Product and content are required");
+      toast.error(!form.productId ? "Please select a product from the list" : "Review content is required");
       return;
     }
     try {
       setSubmitting(true);
       const data: CreatePostData = {
         productId: form.productId,
+        pitchId: form.pitchId || null,
         communityId: id,
         title: form.title || null,
         content: form.content,
@@ -447,7 +495,9 @@ export default function ExpertCommunityDetailPage({
       await PostService.createPost(data);
       toast.success("Post published!");
       setShowCreateForm(false);
-      setForm({ productId: "", title: "", content: "", rating: 5, pros: "", cons: "", verdict: "" });
+      setForm({ productId: "", pitchId: "", title: "", content: "", rating: 5, pros: "", cons: "", verdict: "" });
+      setProductSearch("");
+      setProductOptions([]);
       // Reload posts
       const refreshed = await PostService.getPosts({ communityId: id, isPublished: "true", limit: 50 });
       setPosts(refreshed.data);
@@ -562,20 +612,71 @@ export default function ExpertCommunityDetailPage({
             <div className="flex items-center justify-between">
               <h3 className="text-white font-bold text-lg">Write a Review</h3>
               <Button variant="ghost" size="icon" className="text-zinc-400 hover:text-white h-8 w-8"
-                onClick={() => setShowCreateForm(false)}>
+                onClick={() => { setShowCreateForm(false); setProductSearch(""); setProductOptions([]); setProductDropdownOpen(false); setForm({ productId: "", pitchId: "", title: "", content: "", rating: 5, pros: "", cons: "", verdict: "" }); }}>
                 <X className="w-4 h-4" />
               </Button>
             </div>
             <form onSubmit={handleCreatePost} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Product ID *</label>
+              <div className="space-y-1.5 relative">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Product *</label>
                 <input
-                  value={form.productId}
-                  onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
-                  placeholder="Paste the product ID"
-                  required
-                  className="w-full bg-zinc-800/60 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50"
+                  value={productSearch}
+                  onChange={e => {
+                    setProductSearch(e.target.value);
+                    setForm(f => ({ ...f, productId: "", pitchId: "" }));
+                    setProductDropdownOpen(true);
+                  }}
+                  onFocus={() => setProductDropdownOpen(true)}
+                  placeholder={loadingProducts ? "Loading your products..." : productOptions.length === 0 && !loadingProducts ? "No delivered products yet" : "Search your delivered products..."}
+                  disabled={loadingProducts || (productOptions.length === 0 && !loadingProducts)}
+                  autoComplete="off"
+                  className="w-full bg-zinc-800/60 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
+                {form.productId && (
+                  <div className="flex items-center gap-1.5 mt-1 px-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-xs text-emerald-400 truncate">{productSearch}</span>
+                  </div>
+                )}
+                {!form.productId && productOptions.length === 0 && !loadingProducts && (
+                  <p className="text-xs text-zinc-600 mt-1 px-1">Accept a pitch and confirm receipt before writing a review.</p>
+                )}
+                {productDropdownOpen && (loadingProducts || productOptions.length > 0) && (
+                  <div
+                    className="absolute z-50 top-full left-0 right-0 mt-1 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-56 overflow-y-auto"
+                    onMouseDown={e => e.preventDefault()}
+                  >
+                    {loadingProducts ? (
+                      <div className="flex justify-center p-3">
+                        <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                      </div>
+                    ) : (
+                      productOptions
+                        .filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()))
+                        .map(product => (
+                          <button
+                            key={product.pitchId}
+                            type="button"
+                            onClick={() => {
+                              setForm(f => ({ ...f, productId: product.id, pitchId: product.pitchId }));
+                              setProductSearch(product.name);
+                              setProductDropdownOpen(false);
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+                          >
+                            {product.imageUrl && (
+                              <img src={product.imageUrl} alt="" className="w-8 h-8 rounded object-cover shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-white truncate">{product.name}</p>
+                              <p className="text-xs text-zinc-500">Delivered product</p>
+                            </div>
+                            <span className="text-xs text-zinc-600 font-medium shrink-0">₹{product.price}</span>
+                          </button>
+                        ))
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Title (optional)</label>
@@ -641,7 +742,7 @@ export default function ExpertCommunityDetailPage({
               </div>
               <div className="flex gap-3 justify-end pt-2">
                 <Button type="button" variant="ghost" className="text-zinc-400"
-                  onClick={() => setShowCreateForm(false)}>
+                  onClick={() => { setShowCreateForm(false); setProductSearch(""); setProductOptions([]); setProductDropdownOpen(false); setForm({ productId: "", pitchId: "", title: "", content: "", rating: 5, pros: "", cons: "", verdict: "" }); }}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={submitting} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
@@ -654,10 +755,7 @@ export default function ExpertCommunityDetailPage({
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Main content with tabs */}
-        <div className="lg:col-span-2 space-y-5">
+      <div className="space-y-5">
 
           {/* Tabs */}
           <div className="flex gap-1 bg-[#0b0b0b] border border-[#1a1a1a] rounded-xl p-1 w-fit">
@@ -926,63 +1024,6 @@ export default function ExpertCommunityDetailPage({
               )}
             </div>
           )}
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-            <CardHeader className="border-b border-white/5">
-              <CardTitle className="text-white text-lg">About</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <p className="text-zinc-400 text-sm leading-relaxed">
-                {community.description || "No description provided."}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-            <CardHeader className="border-b border-white/5">
-              <CardTitle className="text-white text-lg">Statistics</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-4 text-sm">
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Members</span>
-                <span className="font-semibold">{community.memberCount ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Experts</span>
-                <span className="font-semibold">{community.expertCount ?? 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Posts</span>
-                <span className="font-semibold">{posts.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Discussions</span>
-                <span className="font-semibold text-emerald-400">{communityDiscussions.length}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-            <CardHeader className="border-b border-white/5">
-              <CardTitle className="text-white text-lg">Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-4 text-sm">
-              <div className="flex items-center gap-3">
-                <Globe className="h-4 w-4 text-zinc-500" />
-                <span className="text-zinc-400">Slug:</span>
-                <span className="text-white">{community.slug}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Calendar className="h-4 w-4 text-zinc-500" />
-                <span className="text-zinc-400">Created:</span>
-                <span className="text-white">{new Date(community.createdAt).toLocaleDateString()}</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );

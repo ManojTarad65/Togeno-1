@@ -214,7 +214,7 @@ export function ImageUpload({
         ? "border-red-500/40 bg-red-500/5"
         : "border-[#2a2a2a] hover:border-emerald-500/50 bg-[#111111]",
     disabled && "opacity-50 cursor-not-allowed",
-    variant === "avatar" ? "aspect-square w-full max-w-[200px]" : "aspect-[16/6] w-full"
+    variant === "avatar" ? "aspect-square w-full max-w-[200px]" : "aspect-[3/1] w-full"
   );
 
   return (

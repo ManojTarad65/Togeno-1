@@ -818,16 +818,29 @@ const CommunityDetailPage: FC<PageProps> = ({ params }) => {
           await fetchJoinedCommunities();
         }
 
-        const [data, membersResult, productsResult] = await Promise.all([
+        const [data, membersResult, productsResult, postsResult] = await Promise.all([
           getCommunityById(id),
           getCommunityMembers(id, { limit: 50 }),
           getProducts({ limit: 100 }),
+          PostService.getPosts({
+            communityId: id,
+            isPublished: "true",
+            limit: 50,
+            sortBy: "created_at",
+            sortOrder: "desc",
+          }),
         ]);
         if (!controller.signal.aborted) {
           setCommunity(data);
           setMembers(membersResult.data as CommunityMember[]);
+          setPosts(postsResult.data);
+          setPostsLoading(false);
+          // Only show products that have at least one published expert review
+          const reviewedProductIds = new Set(postsResult.data.map((p) => p.productId));
           setCommunityProducts(
-            productsResult.data.filter((p) => p.communityId === id)
+            productsResult.data.filter(
+              (p) => p.communityId === id && reviewedProductIds.has(p.id)
+            )
           );
         }
       } catch {
@@ -838,26 +851,6 @@ const CommunityDetailPage: FC<PageProps> = ({ params }) => {
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
-        }
-      }
-
-      try {
-        if (!controller.signal.aborted) setPostsLoading(true);
-        const result = await PostService.getPosts({
-          communityId: id,
-          isPublished: "true",
-          limit: 50,
-          sortBy: "created_at",
-          sortOrder: "desc",
-        });
-        if (!controller.signal.aborted) {
-          setPosts(result.data);
-        }
-      } catch {
-        // non-fatal
-      } finally {
-        if (!controller.signal.aborted) {
-          setPostsLoading(false);
         }
       }
     }

@@ -15,10 +15,10 @@ import {
 } from "@/components/ui/table";
 import {
   Loader2,
-  MoreHorizontal,
   Search,
   Download,
   Package,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -49,10 +49,11 @@ export default function BrandOrdersPage() {
   const filteredOrders = orders.filter(
     (order) =>
       order.productName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase())
+      order.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.awbCode?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getStatusColor = (status: string) => {
+  const getOrderStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case "delivered":
         return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
@@ -70,6 +71,29 @@ export default function BrandOrdersPage() {
     }
   };
 
+  const getShipmentStatusColor = (status: string | null | undefined) => {
+    switch (status?.toUpperCase()) {
+      case "DELIVERED":
+        return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case "OUT_FOR_DELIVERY":
+        return "bg-teal-500/10 text-teal-400 border-teal-500/20";
+      case "SHIPPED":
+        return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+      case "PENDING":
+        return "bg-orange-500/10 text-orange-400 border-orange-500/20";
+      case "RETURNED":
+      case "RTO":
+        return "bg-red-500/10 text-red-400 border-red-500/20";
+      default:
+        return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+    }
+  };
+
+  const formatShipmentStatus = (status: string | null | undefined) => {
+    if (!status) return "—";
+    return status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-[50vh]">
@@ -79,7 +103,7 @@ export default function BrandOrdersPage() {
   }
 
   return (
-    <div className="w-full max-w-[1600px] px-8 py-8 space-y-6">
+    <div className="w-full max-w-400 px-8 py-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1f1f1f] pb-6">
         <div>
@@ -90,21 +114,13 @@ export default function BrandOrdersPage() {
             Manage and track your customer orders.
           </p>
         </div>
-
-        <Button
-          variant="outline"
-          className="h-9 border-[#1f1f1f] bg-[#0b0b0b] text-zinc-300 hover:text-white hover:bg-white/5"
-        >
-          <Download className="mr-2 h-3.5 w-3.5" />
-          Export
-        </Button>
       </div>
 
       {/* Search */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
         <Input
-          placeholder="Search orders..."
+          placeholder="Search orders, AWB..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-9 h-9 bg-[#0b0b0b] border-[#1f1f1f] text-white placeholder:text-zinc-600 focus-visible:ring-emerald-500/50"
@@ -122,14 +138,17 @@ export default function BrandOrdersPage() {
               <TableHead className="text-zinc-500">Size</TableHead>
               <TableHead className="text-zinc-500">Qty</TableHead>
               <TableHead className="text-zinc-500">Amount</TableHead>
-              <TableHead className="text-zinc-500">Status</TableHead>
+              <TableHead className="text-zinc-500">Order Status</TableHead>
+              <TableHead className="text-zinc-500">AWB</TableHead>
+              <TableHead className="text-zinc-500">Shipment</TableHead>
+              <TableHead className="text-zinc-500">Label</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {filteredOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-40 text-center">
+                <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-zinc-500">
                     <Package className="h-6 w-6 text-zinc-700" />
                     No orders found
@@ -172,7 +191,7 @@ export default function BrandOrdersPage() {
                   </TableCell>
 
                   <TableCell className="text-white font-medium text-sm">
-                    ₹{order.total.toFixed(2)}
+                    ₹{(order.total ?? 0).toFixed(2)}
                   </TableCell>
 
                   <TableCell>
@@ -180,11 +199,54 @@ export default function BrandOrdersPage() {
                       variant="outline"
                       className={cn(
                         "capitalize",
-                        getStatusColor(order.status)
+                        getOrderStatusColor(order.status)
                       )}
                     >
                       {order.status}
                     </Badge>
+                  </TableCell>
+
+                  {/* AWB Number */}
+                  <TableCell className="text-sm font-mono">
+                    {order.awbCode ? (
+                      <span className="text-zinc-200">{order.awbCode}</span>
+                    ) : (
+                      <span className="text-zinc-600">Pending</span>
+                    )}
+                  </TableCell>
+
+                  {/* Shipment Status */}
+                  <TableCell>
+                    {order.shipmentStatus ? (
+                      <Badge
+                        variant="outline"
+                        className={cn(getShipmentStatusColor(order.shipmentStatus))}
+                      >
+                        {formatShipmentStatus(order.shipmentStatus)}
+                      </Badge>
+                    ) : (
+                      <span className="text-zinc-600 text-sm">—</span>
+                    )}
+                  </TableCell>
+
+                  {/* Download Label */}
+                  <TableCell>
+                    {order.labelUrl ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 border-[#1f1f1f] bg-transparent text-zinc-300 hover:text-white hover:bg-white/5"
+                        onClick={() => window.open(order.labelUrl!, "_blank")}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1" />
+                        Label
+                        <ExternalLink className="h-3 w-3 ml-1 opacity-50" />
+                      </Button>
+                    ) : (
+                      <span className="text-zinc-600 text-xs">
+                        {order.awbCode ? "Generating..." : "Not ready"}
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
