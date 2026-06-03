@@ -399,6 +399,9 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        // Fetch joined communities first so the store is populated before products are set
+        if (isAuthenticated) await fetchJoinedCommunities();
+
         const [commResult, postsResult, productsResult] = await Promise.all([
           getCommunities({ limit: 100 }),
           PostService.getPosts({ isPublished: "true", limit: 30, sortBy: "created_at", sortOrder: "desc" }),
@@ -407,7 +410,6 @@ export default function DashboardPage() {
         setCommunities(uniqueById(commResult.data));
         setPosts(uniqueById(postsResult.data));
         setProducts(uniqueById(productsResult.data));
-        if (isAuthenticated) await fetchJoinedCommunities();
       } catch (error) {
         console.error(error);
       } finally {
@@ -461,10 +463,13 @@ export default function DashboardPage() {
   const trendingProducts = useMemo(
     () =>
       [...products]
-        .filter((p) => !p.communityId || !joinedCommunityIds.includes(p.communityId))
+        .filter((p) =>
+          postsMap[p.id] && // only show products with a published review
+          (!p.communityId || !joinedCommunityIds.includes(p.communityId))
+        )
         .sort((a, b) => (b.averageRating ?? 0) - (a.averageRating ?? 0))
         .slice(0, 8),
-    [products, joinedCommunityIds]
+    [products, joinedCommunityIds, postsMap]
   );
 
   const postsMap = useMemo(() => {

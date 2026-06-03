@@ -245,20 +245,26 @@ export default function ProductsPage() {
                     <h3 className="text-lg font-bold text-white mb-1.5">
                       {products.length === 0
                         ? "No products in your communities yet"
-                        : "No products match your filters"}
+                        : Object.keys(postsMap).length === 0
+                          ? "No expert reviews published yet"
+                          : "No products match your filters"}
                     </h3>
                     <p className="text-gray-400 text-sm text-center max-w-sm mb-6">
                       {products.length === 0
                         ? "The communities you joined don't have listed products yet."
-                        : "Try adjusting your search or filters to see more results."}
+                        : Object.keys(postsMap).length === 0
+                          ? "Products appear here once an expert in your communities publishes a review."
+                          : "Try adjusting your search or filters to see more results."}
                     </p>
-                    <Button
-                      onClick={() => setSearchQuery("")}
-                      variant="ghost"
-                      className="rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 hover:text-white"
-                    >
-                      Clear Search
-                    </Button>
+                    {(searchQuery || filters) && (
+                      <Button
+                        onClick={() => setSearchQuery("")}
+                        variant="ghost"
+                        className="rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 hover:text-white"
+                      >
+                        Clear Search
+                      </Button>
+                    )}
                 </>
             )}
           </motion.div>
