@@ -113,7 +113,7 @@ export async function requireVerifiedExpert(
     const { data: expertRow, error } = await supabaseAdmin
       .from('expert_details')
       .select('is_verified')
-      .eq('user_id', req.user!.id)
+      .eq('id', req.user!.id)
       .single();
 
     if (error || !expertRow) {
