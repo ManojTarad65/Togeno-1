@@ -346,9 +346,11 @@ class ShiprocketClient {
    */
   async generateLabel(shiprocketShipmentId: string): Promise<string | null> {
     try {
-      const resp = await this.post<{ label_url?: string }>("/orders/print/label", {
-        shipment_id: [shiprocketShipmentId],
-      });
+      const resp = await this.post<{ label_url?: string; label_created?: number; not_created?: unknown[] }>(
+        "/orders/print/label",
+        { shipment_id: [Number(shiprocketShipmentId)] }, // Shiprocket requires numeric IDs
+      );
+      logger.info("Shiprocket label response", { shiprocketShipmentId, labelUrl: resp.label_url, labelCreated: resp.label_created, notCreated: resp.not_created });
       return resp.label_url ?? null;
     } catch (err) {
       logger.warn("Shiprocket label generation failed", { shiprocketShipmentId, err });
