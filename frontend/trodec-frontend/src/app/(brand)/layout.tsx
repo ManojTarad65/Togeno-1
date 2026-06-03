@@ -188,7 +188,7 @@ export default function BrandLayout({
       {/* ── SIDEBAR ── */}
       <aside
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-50 w-[240px] bg-[#0b0b0b] border-r border-[#1a1a1a] flex flex-col",
+          "fixed inset-y-0 left-0 z-50 w-[240px] bg-[#0b0b0b] border-r border-[#1a1a1a] flex flex-col",
           "transform transition-transform duration-200 ease-in-out",
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
@@ -295,7 +295,7 @@ export default function BrandLayout({
       </aside>
 
       {/* ── MAIN CONTENT ── */}
-      <div className="flex-1 min-h-screen overflow-auto flex flex-col">
+      <div className="flex-1 min-h-screen overflow-auto flex flex-col lg:ml-[240px]">
 
         {/* Mobile Header */}
         <header className="lg:hidden sticky top-0 z-30 bg-[#0b0b0b]/90 backdrop-blur-xl border-b border-[#1a1a1a] px-4 h-14 flex items-center justify-between shrink-0">

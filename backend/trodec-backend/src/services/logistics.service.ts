@@ -837,11 +837,7 @@ class LogisticsService {
     }
 
     if (!labelUrl) {
-      const dashboardUrl = row.shiprocket_order_id
-        ? `https://app.shiprocket.in/orders/show/${row.shiprocket_order_id}`
-        : "https://app.shiprocket.in";
-      const err = ApiError.internal(`LABEL_NOT_AVAILABLE:${dashboardUrl}`);
-      throw err;
+      throw ApiError.internal("Label not available yet from Shiprocket. Please try again in a few minutes.");
     }
 
     await supabaseAdmin
