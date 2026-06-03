@@ -6,6 +6,7 @@ import Navbar from "@/components/layout/navbar"
 import Footer from "@/components/layout/Footer"
 import { ToastProvider } from "@/components/providers/toast-provider"
 import { LoginModal } from "@/components/auth/LoginModal"
+import { Toaster } from "@/components/ui/sonner"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
         </ToastProvider>
 
         <LoginModal />
+        <Toaster richColors position="top-right" />
 
         <Footer />
       </body>
