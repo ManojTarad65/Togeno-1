@@ -25,7 +25,7 @@ import {
   Trash2,
   Eye,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { PostService } from "@/services/post.service";
 import { getCommunities, Community } from "@/services/communities.service";
@@ -42,6 +42,7 @@ type PitchedProduct = {
 
 export default function NewPostPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -50,7 +51,7 @@ export default function NewPostPage() {
   const [pitchedProducts, setPitchedProducts] = useState<PitchedProduct[]>([]);
 
   const [productId, setProductId] = useState<string>("");
-  const [communityId, setCommunityId] = useState<string>("");
+  const [communityId, setCommunityId] = useState<string>(searchParams.get("communityId") ?? "");
   const [title, setTitle] = useState("");
   const [rating, setRating] = useState<number>(5);
   const [content, setContent] = useState("");
