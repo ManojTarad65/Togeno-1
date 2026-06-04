@@ -1,6 +1,10 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { adminController } from '@/controllers/admin.controller';
+import { uploadController } from '@/controllers/upload.controller';
 import { authenticate, requireRole } from '@/middleware';
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = Router();
 
@@ -97,5 +101,15 @@ router.get('/pitches', adminController.listAllPitches.bind(adminController));
  * List all shipments with order/pitch info and tracking data.
  */
 router.get('/shipments', adminController.listAllShipments.bind(adminController));
+
+/**
+ * POST /admin/shipments/:id/upload-label
+ * Upload a shipping label PDF/image for a shipment.
+ */
+router.post(
+  '/shipments/:id/upload-label',
+  upload.single('file'),
+  uploadController.uploadShipmentLabel.bind(uploadController)
+);
 
 export default router;

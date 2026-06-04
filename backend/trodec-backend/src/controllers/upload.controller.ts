@@ -7,10 +7,12 @@ import { ApiError } from "@/utils/errors";
 const BUCKET_NAME = "community-images";
 const POST_MEDIA_BUCKET = "post-media";
 const PRODUCT_IMAGES_BUCKET = "product-images";
+const SHIPMENT_LABELS_BUCKET = "shipment-labels";
 
 // Allowed MIME types
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const POST_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "video/mp4", "video/quicktime"]);
+const LABEL_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 // Max sizes in bytes
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2MB
@@ -306,6 +308,68 @@ class UploadController {
         isPrimary: imageRow.is_primary,
         displayOrder: imageRow.display_order,
       }, 201, "Image uploaded successfully");
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /admin/shipments/:id/upload-label
+   * Upload a shipping label (PDF or image) for a shipment.
+   * Admin only — updates shipments.label_url so brands can download it.
+   */
+  async uploadShipmentLabel(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const { id: shipmentId } = req.params;
+      const file = (req as any).file;
+      if (!file) throw ApiError.badRequest("No file provided");
+
+      if (!LABEL_TYPES.has(file.mimetype)) {
+        throw ApiError.badRequest(
+          `Invalid file type "${file.mimetype}". Allowed: pdf, jpg, png`
+        );
+      }
+
+      const MAX_LABEL_SIZE = 10 * 1024 * 1024; // 10MB
+      if (file.size > MAX_LABEL_SIZE) throw ApiError.badRequest("File too large. Maximum size is 10MB");
+
+      // Ensure bucket exists
+      const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+      if (!buckets?.some((b) => b.name === SHIPMENT_LABELS_BUCKET)) {
+        await supabaseAdmin.storage.createBucket(SHIPMENT_LABELS_BUCKET, {
+          public: true,
+          fileSizeLimit: MAX_LABEL_SIZE,
+        });
+      }
+
+      const ext = file.mimetype === "application/pdf" ? "pdf"
+        : file.mimetype === "image/png" ? "png" : "jpg";
+      const filePath = `labels/${shipmentId}.${ext}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(SHIPMENT_LABELS_BUCKET)
+        .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+
+      if (uploadError) throw ApiError.internal(`Upload failed: ${uploadError.message}`);
+
+      const { data: urlData } = supabaseAdmin.storage
+        .from(SHIPMENT_LABELS_BUCKET)
+        .getPublicUrl(filePath);
+
+      const labelUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: dbError } = await supabaseAdmin
+        .from("shipments")
+        .update({ label_url: labelUrl })
+        .eq("id", shipmentId);
+
+      if (dbError) throw ApiError.internal(`Database update failed: ${dbError.message}`);
+
+      sendSuccess(res, { labelUrl }, 200, "Label uploaded successfully");
     } catch (error) {
       next(error);
     }
