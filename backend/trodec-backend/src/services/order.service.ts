@@ -241,6 +241,31 @@ class OrderService {
       }
     }
 
+    // Auto-attribute to expert when no sourcePostId was passed (e.g. checkout from cart or product page).
+    // Find the most recent published post for any product in the cart and attribute to that expert.
+    if (!attributedExpertId && !sourcePostId) {
+      const cartProductIds = (inputItems ?? []).map((i) => i.productId).filter(Boolean);
+      if (cartProductIds.length > 0) {
+        const { data: postRows } = await supabaseAdmin
+          .from("posts")
+          .select("expert_id, product_id")
+          .in("product_id", cartProductIds)
+          .eq("is_published", true)
+          .order("created_at", { ascending: false })
+          .limit(10);
+
+        if (postRows && postRows.length > 0) {
+          // Pick the expert with the most products reviewed in this order
+          const counts: Record<string, number> = {};
+          for (const p of postRows) {
+            if (p.expert_id) counts[p.expert_id] = (counts[p.expert_id] ?? 0) + 1;
+          }
+          const topExpert = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+          if (topExpert) attributedExpertId = topExpert[0];
+        }
+      }
+    }
+
     // Fetch shipping address to denormalize into order
     const { data: addrRow, error: addrError } = await supabaseAdmin
       .from("addresses")
