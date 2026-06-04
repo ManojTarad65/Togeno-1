@@ -247,7 +247,7 @@ function NewPitchForm() {
             {/* Size picker — only shown when selected product has sizes */}
             {(() => {
               const selectedProduct = products.find((p) => p.id === formData.productId);
-              const availableSizes: string[] = selectedProduct?.metadata?.sizes ?? [];
+              const availableSizes: string[] = selectedProduct?.metadata?.attributes?.sizes ?? selectedProduct?.metadata?.sizes ?? [];
               if (availableSizes.length === 0) return null;
 
               // Try to guess expert's preferred size from their clothing_sizes
