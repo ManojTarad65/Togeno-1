@@ -134,7 +134,7 @@ class UserController {
    */
   async getExpertDetailsById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const details = await userService.getExpertDetails(req.params.id);
+      const details = await userService.getExpertDetails(req.params.id as string);
       if (!details) throw ApiError.notFound("Expert details not found");
       sendSuccess(res, details);
     } catch (error) {
