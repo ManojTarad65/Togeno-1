@@ -8,6 +8,16 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { OrderService, Order } from "@/services/order.service";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function OrdersPage() {
     const router = useRouter();
@@ -15,6 +25,23 @@ export default function OrdersPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
+    const [confirmOrderId, setConfirmOrderId] = useState<string | null>(null);
+    const cancellableStatuses = ["pending", "confirmed", "processing"];
+
+    async function handleCancel(orderId: string) {
+        setConfirmOrderId(null);
+        setCancellingId(orderId);
+        try {
+            await OrderService.cancelOrder(orderId);
+            setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: "cancelled" } : o));
+            toast.success("Order cancelled. Refund will be processed if applicable.");
+        } catch (err: any) {
+            toast.error(err.message || "Failed to cancel order");
+        } finally {
+            setCancellingId(null);
+        }
+    }
 
     useEffect(() => {
         const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
@@ -197,11 +224,19 @@ export default function OrdersPage() {
                                             {order.status.toLowerCase() !== 'pending' && order.status.toLowerCase() !== 'cancelled' && (
                                                 <Button
                                                     className="flex-1 sm:flex-none rounded-xl bg-white text-black hover:bg-zinc-200 h-10 px-5 text-xs font-bold transition-all active:scale-95 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
-                                                    onClick={() => {
-                                                        router.push(`/consumer/orders/${order.id}`);
-                                                    }}
+                                                    onClick={() => router.push(`/consumer/orders/${order.id}`)}
                                                 >
                                                     Track Order
+                                                </Button>
+                                            )}
+                                            {cancellableStatuses.includes(order.status.toLowerCase()) && (
+                                                <Button
+                                                    variant="outline"
+                                                    disabled={cancellingId === order.id}
+                                                    className="flex-1 sm:flex-none rounded-xl border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50 h-10 px-5 text-xs font-bold transition-all active:scale-95 bg-[#0a0a0c]"
+                                                    onClick={() => setConfirmOrderId(order.id)}
+                                                >
+                                                    {cancellingId === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancel"}
                                                 </Button>
                                             )}
                                         </div>
@@ -214,6 +249,33 @@ export default function OrdersPage() {
                     </AnimatePresence>
                 </div>
             )}
+
+            <AlertDialog open={!!confirmOrderId} onOpenChange={(open) => !open && setConfirmOrderId(null)}>
+                <AlertDialogContent className="bg-[#0e0e0e] border border-[#1f1f1f] text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel this order?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-zinc-400 space-y-1">
+                            <span className="block">This cannot be undone:</span>
+                            <ul className="list-disc list-inside text-sm space-y-0.5">
+                                <li>Order will be permanently cancelled</li>
+                                <li>Full refund initiated if payment was made (5–7 business days)</li>
+                                <li>Shipment will be cancelled with the courier</li>
+                            </ul>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-transparent border-[#2a2a2a] text-zinc-300 hover:bg-white/5">
+                            Keep Order
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => confirmOrderId && handleCancel(confirmOrderId)}
+                            className="bg-red-600 hover:bg-red-500 text-white"
+                        >
+                            Yes, Cancel Order
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
