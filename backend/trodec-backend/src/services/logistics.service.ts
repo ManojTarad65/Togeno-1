@@ -511,10 +511,10 @@ class LogisticsService {
         label_url: labelUrl,
         carrier,
         type: "FORWARD",
-        status: "SHIPPED",
+        status: "PENDING",
         from_address: fromAddress,
         to_address: toAddress,
-        shipped_at: new Date().toISOString(),
+        shipped_at: null,
       })
       .select()
       .single();
@@ -526,9 +526,12 @@ class LogisticsService {
 
     const shipment = toShipment(shipmentRow as ShipmentRow);
 
+    // Only link the shipment — do NOT advance order status here.
+    // The order moves to "shipped" via the Shiprocket webhook (updateShipmentStatus)
+    // when the courier actually picks it up, not the moment we create the shipment record.
     const { error: orderError } = await supabaseAdmin
       .from("orders")
-      .update({ shipment_id: shipment.id, status: "shipped" })
+      .update({ shipment_id: shipment.id })
       .eq("id", orderId);
 
     if (orderError) {
