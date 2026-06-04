@@ -355,6 +355,21 @@ export default function BrandPitchDetailPage() {
         <ProductAttributesCard metadata={product.metadata} />
       )}
 
+      {/* Selected Size */}
+      {pitch.selectedSize && (
+        <Card className="bg-[#0b0b0b] border border-purple-500/20">
+          <CardContent className="p-5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+              <span className="text-purple-400 text-xs font-black">SIZE</span>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500">Sample size to ship</p>
+              <p className="text-white font-bold text-lg">{pitch.selectedSize}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Your Message */}
       {pitch.message && (
         <Card className="bg-[#0b0b0b] border border-[#1f1f1f]">

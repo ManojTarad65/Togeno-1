@@ -229,6 +229,9 @@ class UserService {
     if (data.yearsOfExperience !== undefined) {
       updateData.years_of_experience = data.yearsOfExperience;
     }
+    if (data.clothingSizes !== undefined) {
+      updateData.clothing_sizes = data.clothingSizes;
+    }
 
     if (Object.keys(updateData).length === 0) {
       throw ApiError.badRequest("No fields to update");

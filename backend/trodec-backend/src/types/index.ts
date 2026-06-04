@@ -31,6 +31,7 @@ export interface ExpertDetails {
   verificationDate: string | null;
   rating: number;
   totalReviews: number;
+  clothingSizes: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }
@@ -110,6 +111,7 @@ export interface ExpertDetailsRow {
   verification_date: string | null;
   rating: number;
   total_reviews: number;
+  clothing_sizes: Record<string, string> | null;
   created_at: string;
   updated_at: string;
 }
@@ -160,6 +162,7 @@ export function toExpertDetails(row: ExpertDetailsRow): ExpertDetails {
     verificationDate: row.verification_date,
     rating: Number(row.rating),
     totalReviews: row.total_reviews,
+    clothingSizes: row.clothing_sizes ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

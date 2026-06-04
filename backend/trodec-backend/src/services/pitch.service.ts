@@ -34,6 +34,7 @@ export interface Pitch {
   postedAt: string | null;
   expiresAt: string | null;
   sampleType: "KEEP_SAMPLE" | "RETURN_SAMPLE";
+  selectedSize: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +61,7 @@ export interface PitchRow {
   posted_at: string | null;
   expires_at: string | null;
   sample_type: "KEEP_SAMPLE" | "RETURN_SAMPLE";
+  selected_size: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,6 +131,7 @@ export function toPitch(row: PitchRow): Pitch {
     postedAt: row.posted_at,
     expiresAt: row.expires_at,
     sampleType: row.sample_type ?? "KEEP_SAMPLE",
+    selectedSize: row.selected_size ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -145,6 +148,7 @@ interface CreatePitchData {
   requirements?: string | null;
   postingDeadline?: string | null;
   sampleType?: "KEEP_SAMPLE" | "RETURN_SAMPLE";
+  selectedSize?: string | null;
 }
 
 interface UpdatePitchData {
@@ -174,6 +178,7 @@ class PitchService {
       requirements,
       postingDeadline,
       sampleType = "KEEP_SAMPLE",
+      selectedSize,
     } = data;
 
     // Validate that the product belongs to the brand
@@ -275,6 +280,7 @@ class PitchService {
         requirements,
         posting_deadline: postingDeadline,
         sample_type: sampleType,
+        selected_size: selectedSize ?? null,
       })
       .select()
       .single();

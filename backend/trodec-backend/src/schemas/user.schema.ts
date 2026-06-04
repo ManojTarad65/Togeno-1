@@ -13,6 +13,7 @@ export const updateExpertDetailsSchema = z.object({
   linkedinUrl: z.string().url('Invalid LinkedIn URL').optional().nullable(),
   bio: z.string().max(1000, 'Bio must be less than 1000 characters').optional().nullable(),
   yearsOfExperience: z.number().int().min(0).max(50).optional().nullable(),
+  clothingSizes: z.record(z.string()).optional(),
 });
 
 // Update brand details schema

@@ -37,6 +37,7 @@ import {
   createAddress,
   Address,
 } from "@/services/address.service";
+import api from "@/services/api";
 
 interface MembershipWithCommunity {
   membership: CommunityMember;
@@ -46,6 +47,12 @@ interface MembershipWithCommunity {
 export default function ExpertProfilePage() {
   const { user, profile, expertDetails } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [clothingSizes, setClothingSizes] = useState<Record<string, string>>({
+    clothing: "",
+    bottoms: "",
+    shoes: "",
+  });
+  const [savingSizes, setSavingSizes] = useState(false);
   const [memberships, setMemberships] = useState<MembershipWithCommunity[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [warehouseAddress, setWarehouseAddressState] = useState<Address | null>(null);
@@ -60,6 +67,26 @@ export default function ExpertProfilePage() {
     getAddresses().then(setAddresses).catch(() => {});
     getWarehouseAddress().then(setWarehouseAddressState).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (expertDetails?.clothingSizes) {
+      setClothingSizes((prev) => ({ ...prev, ...(expertDetails.clothingSizes as Record<string, string>) }));
+    }
+  }, [expertDetails]);
+
+  async function handleSaveSizes() {
+    setSavingSizes(true);
+    try {
+      const sizes: Record<string, string> = {};
+      Object.entries(clothingSizes).forEach(([k, v]) => { if (v.trim()) sizes[k] = v.trim(); });
+      await api.patch("/users/me/expert", { clothingSizes: sizes });
+      toast.success("Size preferences saved");
+    } catch {
+      toast.error("Failed to save sizes");
+    } finally {
+      setSavingSizes(false);
+    }
+  }
 
   async function handleSetWarehouse(addressId: string) {
     setWarehouseLoading(true);
@@ -119,6 +146,9 @@ export default function ExpertProfilePage() {
           <TabsTrigger value="general" className="data-[state=active]:bg-zinc-800">
             <User className="w-4 h-4 mr-2" /> General
           </TabsTrigger>
+          <TabsTrigger value="sizes" className="data-[state=active]:bg-zinc-800">
+            <Tag className="w-4 h-4 mr-2" /> Sizes
+          </TabsTrigger>
           <TabsTrigger value="warehouse" className="data-[state=active]:bg-zinc-800">
             <Warehouse className="w-4 h-4 mr-2" /> Warehouse
           </TabsTrigger>
@@ -131,6 +161,46 @@ export default function ExpertProfilePage() {
         </TabsList>
 
         {/* ================= WAREHOUSE TAB ================= */}
+        {/* ── SIZES TAB ── */}
+        <TabsContent value="sizes" className="space-y-6 mt-6">
+          <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Tag className="w-4 h-4 text-purple-400" /> Size Preferences
+              </CardTitle>
+              <p className="text-sm text-zinc-500">
+                Brands will see these when sending you product samples. They&apos;ll pre-fill the size they ship.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {[
+                { key: "clothing", label: "Clothing / Top size", placeholder: "e.g. M, L, XL" },
+                { key: "bottoms", label: "Bottoms / Pants size", placeholder: "e.g. 32, 34W×32L" },
+                { key: "shoes", label: "Shoe size", placeholder: "e.g. UK 10, EU 44, US 11" },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <Label className="text-zinc-400 text-sm mb-1 block">{label}</Label>
+                  <Input
+                    value={clothingSizes[key] ?? ""}
+                    onChange={(e) => setClothingSizes((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="bg-[#111] border-[#1a1a1a] text-white max-w-xs"
+                  />
+                </div>
+              ))}
+              <div className="pt-2">
+                <Button
+                  onClick={handleSaveSizes}
+                  disabled={savingSizes}
+                  className="bg-purple-600 hover:bg-purple-500 text-white"
+                >
+                  {savingSizes ? <><span className="animate-spin mr-2">⟳</span>Saving...</> : <><Save className="w-4 h-4 mr-2" />Save Sizes</>}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="warehouse" className="space-y-6 mt-6">
           <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
             <CardHeader>

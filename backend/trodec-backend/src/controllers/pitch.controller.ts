@@ -34,6 +34,7 @@ class PitchController {
         requirements: data.requirements,
         postingDeadline: data.postingDeadline,
         sampleType: (data as any).sampleType ?? "KEEP_SAMPLE",
+        selectedSize: data.selectedSize ?? null,
       });
 
       sendSuccess(res, pitch, 201, "Pitch created successfully");

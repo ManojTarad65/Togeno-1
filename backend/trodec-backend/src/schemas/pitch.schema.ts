@@ -19,6 +19,7 @@ export const createPitchSchema = z.object({
   offerDetails: z.string().max(2000, "Offer details must be at most 2000 characters").optional().nullable(),
   requirements: z.string().max(2000, "Requirements must be at most 2000 characters").optional().nullable(),
   postingDeadline: z.string().optional().nullable(),
+  selectedSize: z.string().max(50).optional().nullable(),
 });
 
 // Update pitch schema (for brand to update their pitch details)

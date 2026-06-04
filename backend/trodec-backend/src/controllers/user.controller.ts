@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { userService } from '@/services/user.service';
 import { sendSuccess } from '@/utils/response';
+import { ApiError } from '@/utils/errors';
 import { AuthenticatedRequest } from '@/types';
 import {
   UpdateProfileInput,
@@ -122,6 +123,20 @@ class UserController {
         limit: query.limit,
       });
       sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /users/:id/expert-details
+   * Public expert details — used by brands to pre-fill size when pitching
+   */
+  async getExpertDetailsById(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const details = await userService.getExpertDetails(req.params.id);
+      if (!details) throw ApiError.notFound("Expert details not found");
+      sendSuccess(res, details);
     } catch (error) {
       next(error);
     }

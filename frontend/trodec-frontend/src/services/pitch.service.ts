@@ -24,6 +24,7 @@ export interface Pitch {
   postingDeadline: string | null;
   postedAt: string | null;
   expiresAt: string | null;
+  selectedSize: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,6 +37,7 @@ export interface CreatePitchInput {
   offerDetails?: string;
   requirements?: string;
   postingDeadline?: string;
+  selectedSize?: string | null;
 }
 
 export interface UpdatePitchInput {

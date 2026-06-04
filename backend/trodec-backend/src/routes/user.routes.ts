@@ -98,4 +98,10 @@ router.get(
   userController.listBrands
 );
 
+/**
+ * GET /users/:id/expert-details
+ * Get public expert details for a specific user (brand needs this for clothing sizes when pitching)
+ */
+router.get('/:id/expert-details', userController.getExpertDetailsById);
+
 export default router;
