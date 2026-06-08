@@ -392,7 +392,7 @@ class CommissionService {
     amount: number;
     bankAccountId: string;
   }): Promise<WithdrawalRequest> {
-    if (data.amount < 100) throw ApiError.badRequest("Minimum withdrawal amount is ₹100");
+    if (data.amount < 500) throw ApiError.badRequest("Minimum withdrawal amount is ₹500");
 
     // Fetch all pending commissions for this expert, oldest first
     const { data: pendingCommissions, error: fetchError } = await supabaseAdmin

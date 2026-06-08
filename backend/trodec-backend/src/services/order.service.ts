@@ -4,6 +4,7 @@ import { logger } from "../utils/logger";
 import { productService } from "./product.service";
 import { logisticsService, shiprocketClient } from "./logistics.service";
 import { commissionService } from "./commission.service";
+import { brandPayoutService } from "./brand_payout.service";
 import { brandService } from "./brand.service";
 import { emailService } from "./email.service";
 import { notificationService } from "./notification.service";
@@ -134,8 +135,24 @@ export interface OrderItemRow {
   created_at: string;
 }
 
+export interface OrderShipmentSummary {
+  shipmentId: string;
+  awbCode: string | null;
+  trackingUrl: string | null;
+  carrier: string;
+  status: string;
+  labelUrl: string | null;
+  invoiceUrl: string | null;
+  manifestUrl: string | null;
+  estimatedDelivery: string | null;
+  trackingEvents: Array<{ status: string; label: string; location: string; timestamp: string }> | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+}
+
 export interface OrderWithItems extends Order {
   items: OrderItem[];
+  shipment?: OrderShipmentSummary | null;
 }
 
 export function toOrder(row: OrderRow): Order {
@@ -197,11 +214,39 @@ interface CreateOrderData {
   items?: CartItemInput[];
   // Post-based commission attribution
   sourcePostId?: string | null;
+  // Optional promo code
+  promoCode?: string | null;
 }
 
 interface UpdateOrderData {
-  status?: "pending" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled";
   notes?: string | null;
+}
+
+async function fetchShipmentSummary(orderId: string): Promise<OrderShipmentSummary | null> {
+  const { data } = await supabaseAdmin
+    .from("shipments")
+    .select("id, awb_code, tracking_url, carrier, status, label_url, invoice_url, manifest_url, estimated_delivery, tracking_events, shipped_at, delivered_at")
+    .eq("order_id", orderId)
+    .eq("type", "FORWARD")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) return null;
+  return {
+    shipmentId:        (data as any).id,
+    awbCode:           (data as any).awb_code ?? null,
+    trackingUrl:       (data as any).tracking_url ?? null,
+    carrier:           (data as any).carrier ?? "Shiprocket",
+    status:            (data as any).status ?? "PENDING",
+    labelUrl:          (data as any).label_url ?? null,
+    invoiceUrl:        (data as any).invoice_url ?? null,
+    manifestUrl:       (data as any).manifest_url ?? null,
+    estimatedDelivery: (data as any).estimated_delivery ?? null,
+    trackingEvents:    (data as any).tracking_events ?? null,
+    shippedAt:         (data as any).shipped_at ?? null,
+    deliveredAt:       (data as any).delivered_at ?? null,
+  };
 }
 
 class OrderService {
@@ -210,7 +255,7 @@ class OrderService {
    * Fetches the shipping address to denormalize it into the order row.
    */
   async createOrderFromCart(data: CreateOrderData): Promise<OrderWithItems> {
-    const { userId, shippingAddressId, notes, items: inputItems, sourcePostId } = data;
+    const { userId, shippingAddressId, notes, items: inputItems, sourcePostId, promoCode } = data;
 
     // If ordering from a post, resolve the expert who authored it
     // and verify the consumer is a member of that post's community
@@ -325,9 +370,49 @@ class OrderService {
     }
 
     const taxAmount = 0;
-    const FREE_SHIPPING_THRESHOLD = 50;
-    const shippingAmount = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : 5.99;
-    const total = subtotal + taxAmount + shippingAmount;
+    // Shipping is always free for customers — actual freight is paid by Trodec
+    // and deducted from the brand's net payout after delivery.
+    const shippingAmount = 0;
+
+    // Validate and apply promo code discount
+    let discountAmount = 0;
+    let appliedPromoCode: string | null = null;
+    if (promoCode) {
+      const { data: promo, error: promoErr } = await supabaseAdmin
+        .from("promo_codes")
+        .select("id, code, discount_pct, max_uses, used_count, min_order_amount, expires_at")
+        .eq("code", promoCode.trim().toUpperCase())
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (promoErr || !promo) {
+        throw ApiError.badRequest("Invalid or expired promo code");
+      }
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+        throw ApiError.badRequest("This promo code has expired");
+      }
+      if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
+        throw ApiError.badRequest("This promo code has reached its usage limit");
+      }
+      if (subtotal < Number(promo.min_order_amount)) {
+        throw ApiError.badRequest(`Minimum order amount for this code is ₹${promo.min_order_amount}`);
+      }
+      // Per-user single-use check
+      const { data: alreadyUsed } = await supabaseAdmin
+        .from("promo_code_usages")
+        .select("id")
+        .eq("promo_code_id", promo.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (alreadyUsed) {
+        throw ApiError.badRequest("You have already used this promo code");
+      }
+
+      discountAmount = Math.round((subtotal * Number(promo.discount_pct)) / 100 * 100) / 100;
+      appliedPromoCode = promo.code;
+    }
+
+    const total = subtotal + taxAmount + shippingAmount - discountAmount;
 
     try {
       // 1. Create order with denormalized shipping address
@@ -339,6 +424,8 @@ class OrderService {
           subtotal,
           tax_amount: taxAmount,
           shipping_amount: shippingAmount,
+          discount_amount: discountAmount,
+          promo_code: appliedPromoCode,
           total,
           shipping_name: addrRow.full_name,
           shipping_phone: addrRow.phone_number ?? addrRow.phone,
@@ -389,6 +476,25 @@ class OrderService {
 
       // 4. Clear Supabase cart (no-op if frontend used localStorage cart)
       await productService.clearCart(userId);
+
+      // 5. Record promo code usage + increment used_count
+      if (appliedPromoCode) {
+        const { data: promo } = await supabaseAdmin
+          .from("promo_codes")
+          .select("id, used_count")
+          .eq("code", appliedPromoCode)
+          .single();
+        if (promo) {
+          // Non-fatal: usage was already validated above; ignore duplicate-key errors
+          await supabaseAdmin
+            .from("promo_code_usages")
+            .insert({ promo_code_id: promo.id, user_id: userId, order_id: order.id });
+          await supabaseAdmin
+            .from("promo_codes")
+            .update({ used_count: (promo as any).used_count + 1 })
+            .eq("id", promo.id);
+        }
+      }
 
       const createdOrder = {
         ...order,
@@ -442,9 +548,12 @@ class OrderService {
       throw ApiError.internal("Failed to fetch order");
     }
 
+    const order = toOrder(data as OrderRow);
+    const shipment = await fetchShipmentSummary(order.id);
     return {
-      ...toOrder(data as OrderRow),
+      ...order,
       items: data.order_items?.map((item: OrderItemRow) => toOrderItem(item)) || [],
+      shipment,
     };
   }
 
@@ -467,9 +576,12 @@ class OrderService {
       throw ApiError.internal("Failed to fetch order");
     }
 
+    const order = toOrder(data as OrderRow);
+    const shipment = await fetchShipmentSummary(order.id);
     return {
-      ...toOrder(data as OrderRow),
+      ...order,
       items: data.order_items?.map((item: OrderItemRow) => toOrderItem(item)) || [],
+      shipment,
     };
   }
 
@@ -560,15 +672,43 @@ class OrderService {
       notificationService.create(consumerId, `order.${status}`, notif.title, notif.message, { orderId, orderNumber: order.orderNumber }).catch(() => {});
     }
 
+    if (status === "shipped") {
+      // Send shipped email with tracking info (fire-and-forget)
+      (async () => {
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("email, full_name")
+          .eq("id", consumerId)
+          .maybeSingle();
+        if (!profile?.email) return;
+
+        const shipment = await fetchShipmentSummary(orderId);
+        emailService.sendOrderShipped({
+          to: profile.email,
+          customerName: profile.full_name ?? "Customer",
+          orderNumber: order.orderNumber,
+          awbCode: shipment?.awbCode ?? null,
+          courierName: shipment?.carrier ?? null,
+          trackingUrl: shipment?.trackingUrl ?? null,
+          estimatedDelivery: shipment?.estimatedDelivery ?? null,
+        }).catch((err) => logger.error("Shipped email failed", { orderId, err }));
+      })().catch(() => {});
+    }
+
     if (status === "delivered") {
-      commissionService.calculateAndStore(orderId, order.total, order.expertId).catch((err) =>
-        logger.error("Commission calculation failed", { orderId, err })
-      );
+      // Commission must commit before brand payout reads it — chain, do not fire in parallel.
+      commissionService
+        .calculateAndStore(orderId, order.subtotal, order.expertId)
+        .then(() => brandPayoutService.calculateAndStore(orderId))
+        .catch((err) => logger.error("Payout pipeline failed after delivery", { orderId, err }));
     }
 
     if (status === "cancelled") {
       commissionService.reverse(orderId).catch((err) =>
         logger.error("Commission reversal failed", { orderId, err })
+      );
+      brandPayoutService.reverse(orderId).catch((err) =>
+        logger.error("Brand payout reversal failed", { orderId, err })
       );
       logisticsService.cancelOrderShipment(orderId).catch((err) =>
         logger.error("Shiprocket order cancellation failed", { orderId, err })
@@ -745,16 +885,15 @@ class OrderService {
   }
 
   /**
-   * Update order (general)
+   * Update order notes (consumers may only update notes, not status).
    */
   async updateOrder(orderId: string, data: UpdateOrderData, userId?: string): Promise<Order> {
-    const updateData: Record<string, unknown> = {};
-    if (data.status !== undefined) updateData.status = data.status;
-    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.notes === undefined) throw ApiError.badRequest("No fields to update");
 
-    if (Object.keys(updateData).length === 0) throw ApiError.badRequest("No fields to update");
-
-    let query = supabaseAdmin.from("orders").update(updateData).eq("id", orderId);
+    let query = supabaseAdmin
+      .from("orders")
+      .update({ notes: data.notes })
+      .eq("id", orderId);
     if (userId) query = query.eq("user_id", userId);
 
     const { data: orderRow, error } = await query.select().single();
@@ -766,6 +905,32 @@ class OrderService {
     }
 
     return toOrder(orderRow as OrderRow);
+  }
+
+  /**
+   * Consumer confirms they received their order.
+   * Only allowed when order is in SHIPPED or OUT_FOR_DELIVERY equivalent status.
+   * Transitions to DELIVERED and triggers the payout pipeline.
+   *
+   * This is the ONLY way a consumer can influence delivered status —
+   * the generic PATCH /orders/:id/status is admin-only.
+   */
+  async confirmReceipt(orderId: string, userId: string): Promise<Order> {
+    const order = await this.getOrder(orderId, userId);
+    if (!order) throw ApiError.notFound("Order not found");
+
+    // Consumer can only confirm receipt once order has actually been shipped
+    const allowedStatuses: string[] = ["shipped", "processing"];
+    if (!allowedStatuses.includes(order.status)) {
+      throw ApiError.badRequest(
+        order.status === "delivered"
+          ? "This order has already been marked as delivered"
+          : `Cannot confirm receipt for an order with status: ${order.status}`
+      );
+    }
+
+    // Go through updateOrderStatus so all hooks fire (commission, brand payout)
+    return this.updateOrderStatus(orderId, "delivered");
   }
 }
 

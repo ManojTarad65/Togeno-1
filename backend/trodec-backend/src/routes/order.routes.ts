@@ -10,87 +10,60 @@ import {
 
 const router = Router();
 
-// ============================================
-// AUTHENTICATED ROUTES (Authentication Required)
-// ============================================
+// =====================================================================
+// Static paths — must all come BEFORE /:id to avoid Express shadowing
+// =====================================================================
 
-/**
- * POST /orders
- * Create order from cart
- */
-router.post(
-  "/",
-  authenticate,
-  validateBody(createOrderSchema),
-  orderController.createOrder
-);
+/** POST /orders — create order from cart (any authenticated user) */
+router.post("/", authenticate, validateBody(createOrderSchema), orderController.createOrder);
 
-/**
- * GET /orders
- * Get user's orders
- */
-router.get(
-  "/",
-  authenticate,
-  validateQuery(listOrdersQuerySchema),
-  orderController.getOrders
-);
+/** GET /orders — list caller's orders */
+router.get("/", authenticate, validateQuery(listOrdersQuerySchema), orderController.getOrders);
 
-/**
- * GET /orders/number/:orderNumber
- * Get order by order number (MUST come before /:id)
- */
-router.get(
-  "/number/:orderNumber",
-  authenticate,
-  orderController.getOrderByNumber
-);
+/** GET /orders/number/:orderNumber */
+router.get("/number/:orderNumber", authenticate, orderController.getOrderByNumber);
 
-/**
- * POST /orders/validate-promo
- * Validate a promo code (must be before /:id)
- */
+/** POST /orders/validate-promo */
 router.post("/validate-promo", authenticate, orderController.validatePromo);
 
-/**
- * GET /orders/expert/dashboard
- * Get orders attributed to the logged-in expert (MUST come before /:id)
- */
+/** GET /orders/expert/dashboard */
 router.get("/expert/dashboard", authenticate, requireRole("expert"), orderController.getExpertOrders);
 
-/**
- * GET /orders/:id
- * Get order by ID
- */
+// =====================================================================
+// /:id routes
+// =====================================================================
+
+/** GET /orders/:id */
 router.get("/:id", authenticate, orderController.getOrder);
 
 /**
- * PATCH /orders/:id/status
- * Update order status
+ * PATCH /orders/:id/status  — ADMIN ONLY.
+ * Consumers must use /confirm-receipt or /cancel.
  */
 router.patch(
   "/:id/status",
   authenticate,
+  requireRole("admin"),
   validateBody(updateOrderStatusSchema),
-  orderController.updateOrderStatus
+  orderController.updateOrderStatus,
 );
 
 /**
- * POST /orders/:id/cancel
- * Cancel order
+ * POST /orders/:id/confirm-receipt  — consumer confirms delivery.
+ * This is the ONLY path for consumers to trigger the delivered state.
+ * Only allowed when order is in 'shipped' or 'processing' status.
  */
+router.post("/:id/confirm-receipt", authenticate, orderController.confirmReceipt);
+
+/** POST /orders/:id/cancel — consumer cancels their own order */
 router.post("/:id/cancel", authenticate, orderController.cancelOrder);
+
+/** POST /orders/:id/brand-cancel — brand admin cancels an order */
 router.post("/:id/brand-cancel", authenticate, requireRole("brand_admin"), orderController.brandCancelOrder);
 
 /**
- * PATCH /orders/:id
- * Update order
+ * PATCH /orders/:id — update notes only (consumers cannot change status here).
  */
-router.patch(
-  "/:id",
-  authenticate,
-  validateBody(updateOrderSchema),
-  orderController.updateOrder
-);
+router.patch("/:id", authenticate, validateBody(updateOrderSchema), orderController.updateOrder);
 
 export default router;

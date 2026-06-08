@@ -19,16 +19,27 @@ export interface ShipmentRow {
   shiprocket_shipment_id: string | null;
   awb_code: string | null;
   label_url: string | null;
+  invoice_url: string | null;
+  manifest_url: string | null;
   carrier: string;
   type: ShipmentType;
   status: ShipmentStatus;
   from_address: Record<string, unknown>;
   to_address: Record<string, unknown>;
+  tracking_events: TrackingEvent[] | null;
+  estimated_delivery: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
   returned_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface TrackingEvent {
+  status: string;
+  label: string;
+  location: string;
+  timestamp: string;
 }
 
 export interface Shipment {
@@ -40,11 +51,15 @@ export interface Shipment {
   shiprocketShipmentId: string | null;
   awbCode: string | null;
   labelUrl: string | null;
+  invoiceUrl: string | null;
+  manifestUrl: string | null;
   carrier: string;
   type: ShipmentType;
   status: ShipmentStatus;
   fromAddress: Record<string, unknown>;
   toAddress: Record<string, unknown>;
+  trackingEvents: TrackingEvent[] | null;
+  estimatedDelivery: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
   returnedAt: string | null;
@@ -62,11 +77,15 @@ export function toShipment(row: ShipmentRow): Shipment {
     shiprocketShipmentId: row.shiprocket_shipment_id ?? null,
     awbCode: row.awb_code ?? null,
     labelUrl: row.label_url ?? null,
+    invoiceUrl: row.invoice_url ?? null,
+    manifestUrl: row.manifest_url ?? null,
     carrier: row.carrier,
     type: row.type,
     status: row.status,
     fromAddress: row.from_address,
     toAddress: row.to_address,
+    trackingEvents: row.tracking_events ?? null,
+    estimatedDelivery: row.estimated_delivery ?? null,
     shippedAt: row.shipped_at,
     deliveredAt: row.delivered_at,
     returnedAt: row.returned_at,
@@ -98,18 +117,47 @@ interface ShiprocketOrderItem {
 }
 
 // ---------------------------------------------------------------------------
+// Canonical status mapper (mirrors EV-charger project)
+// ---------------------------------------------------------------------------
+
+export type CanonicalShipmentStatus =
+  | "pending"
+  | "order_placed"
+  | "processing"
+  | "ready_to_ship"
+  | "shipped"
+  | "in_transit"
+  | "out_for_delivery"
+  | "delivered"
+  | "cancelled";
+
+/** Map a raw Shiprocket status string to a canonical internal stage. */
+export function mapShiprocketStatus(raw: string): CanonicalShipmentStatus {
+  const s = (raw || "").toUpperCase();
+  if (s.includes("DELIVERED")) return "delivered";
+  if (s.includes("OUT FOR DELIVERY")) return "out_for_delivery";
+  if (s.includes("IN TRANSIT") || s.includes("RTO")) return "in_transit";
+  if (s.includes("SHIPPED") || s.includes("PICKED") || s.includes("PICKUP")) return "shipped";
+  if (s.includes("CANCEL")) return "cancelled";
+  if (s.includes("READY") || s.includes("MANIFEST") || s.includes("PACK")) return "ready_to_ship";
+  if (s.includes("NEW") || s.includes("PROCESS") || s.includes("AWB")) return "processing";
+  return "order_placed";
+}
+
+// ---------------------------------------------------------------------------
 // Shiprocket API client
 // ---------------------------------------------------------------------------
 
 const SHIPROCKET_BASE = "https://apiv2.shiprocket.in/v1/external";
+// Shiprocket tokens are valid for ~10 days; refresh one day early
+const TOKEN_TTL_MS = 9 * 24 * 60 * 60 * 1000;
 
 class ShiprocketClient {
   private token: string | null = null;
   private tokenExpiry: number = 0;
 
-  private async getToken(): Promise<string> {
-    // Reuse token if still valid (tokens last 24h, refresh 30min before)
-    if (this.token && Date.now() < this.tokenExpiry) {
+  private async getToken(forceRefresh = false): Promise<string> {
+    if (!forceRefresh && this.token && Date.now() < this.tokenExpiry) {
       return this.token;
     }
 
@@ -130,13 +178,12 @@ class ShiprocketClient {
     }
 
     this.token = json.token;
-    // 23.5 hours from now
-    this.tokenExpiry = Date.now() + 23.5 * 60 * 60 * 1000;
+    this.tokenExpiry = Date.now() + TOKEN_TTL_MS;
     logger.info("Shiprocket token refreshed");
     return this.token;
   }
 
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  private async post<T>(path: string, body: Record<string, unknown>, retry = true): Promise<T> {
     const token = await this.getToken();
     const res = await fetch(`${SHIPROCKET_BASE}${path}`, {
       method: "POST",
@@ -147,19 +194,29 @@ class ShiprocketClient {
       body: JSON.stringify(body),
     });
 
+    if (res.status === 401 && retry) {
+      await this.getToken(true);
+      return this.post<T>(path, body, false);
+    }
+
     const json = (await res.json()) as T & { message?: string };
     if (!res.ok) {
-      logger.error("Shiprocket API error", { path, status: res.status, message: (json as any).message, requestBody: body, responseBody: json });
+      logger.error("Shiprocket API error", { path, status: res.status, message: (json as any).message, body });
       throw ApiError.internal((json as any).message ?? "Shiprocket request failed");
     }
     return json;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  private async get<T>(path: string, retry = true): Promise<T> {
     const token = await this.getToken();
     const res = await fetch(`${SHIPROCKET_BASE}${path}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+
+    if (res.status === 401 && retry) {
+      await this.getToken(true);
+      return this.get<T>(path, false);
+    }
 
     const json = (await res.json()) as T & { message?: string };
     if (!res.ok) {
@@ -169,10 +226,10 @@ class ShiprocketClient {
     return json;
   }
 
-  /**
-   * Create a forward order on Shiprocket.
-   * Returns { shiprocketOrderId, shiprocketShipmentId, trackingId, courier }
-   */
+  // -------------------------------------------------------------------------
+  // Order creation
+  // -------------------------------------------------------------------------
+
   async createForwardOrder(params: {
     internalOrderId: string;
     orderDate: string;
@@ -182,10 +239,24 @@ class ShiprocketClient {
     totalAmount: number;
     paymentMethod?: "prepaid" | "COD";
     pickupLocation?: string;
-  }): Promise<{ shiprocketOrderId: string; shiprocketShipmentId: string; trackingId: string; courier: string }> {
-    const { internalOrderId, orderDate, to, items, totalAmount, paymentMethod = "prepaid", pickupLocation = "Primary" } = params;
+    weight?: number;
+    length?: number;
+    breadth?: number;
+    height?: number;
+  }): Promise<{
+    shiprocketOrderId: string;
+    shiprocketShipmentId: string;
+    trackingId: string;
+    courier: string;
+    freightCharge: number | null;
+    courierCompanyId: number | null;
+  }> {
+    const {
+      internalOrderId, orderDate, to, items, totalAmount,
+      paymentMethod = "prepaid", pickupLocation = "Primary",
+      weight = 0.5, length = 10, breadth = 10, height = 10,
+    } = params;
 
-    // Shiprocket requires exactly 10-digit Indian mobile number
     const sanitizedPhone = (to.phone ?? "").replace(/\D/g, "").slice(-10);
 
     const body = {
@@ -213,10 +284,10 @@ class ShiprocketClient {
       })),
       payment_method: paymentMethod,
       sub_total: totalAmount,
-      length: 10,
-      breadth: 10,
-      height: 10,
-      weight: 0.5,
+      length,
+      breadth,
+      height,
+      weight,
     };
 
     const resp = await this.post<{
@@ -225,22 +296,27 @@ class ShiprocketClient {
       awb_code?: string;
       courier_name?: string;
       status: string;
-    }>("/orders/create/adhoc", body);
+    }>("/orders/create/adhoc", body as Record<string, unknown>);
 
-    // Shiprocket returns no order_id when the pickup location is unregistered or invalid
     if (!resp.order_id) {
-      throw new Error(`Shiprocket order creation returned no order_id — pickup location may be unregistered. Response: ${JSON.stringify(resp)}`);
+      throw new Error(
+        `Shiprocket order creation returned no order_id — pickup location may be unregistered. Response: ${JSON.stringify(resp)}`
+      );
     }
 
-    // Auto-assign courier — wallet may be empty; don't throw if it fails
     let awb = resp.awb_code ?? "";
     let courier = resp.courier_name ?? "Shiprocket";
+    let freightCharge: number | null = null;
+    let courierCompanyId: number | null = null;
 
     if (!awb && resp.shipment_id) {
       try {
-        awb = await this.assignCourier(resp.shipment_id);
+        const awbResult = await this.assignCourier(resp.shipment_id);
+        awb = awbResult.awbCode;
+        courier = awbResult.courierName ?? courier;
+        freightCharge = awbResult.freightCharge;
+        courierCompanyId = awbResult.courierCompanyId;
       } catch (err: any) {
-        // Log but don't throw — order is created, AWB can be assigned later
         logger.warn("Courier AWB assignment failed (wallet may be empty). Order saved.", {
           shiprocketOrderId: resp.order_id,
           shiprocketShipmentId: resp.shipment_id,
@@ -254,13 +330,321 @@ class ShiprocketClient {
       shiprocketShipmentId: String(resp.shipment_id),
       trackingId: awb,
       courier,
+      freightCharge,
+      courierCompanyId,
     };
   }
 
+  // -------------------------------------------------------------------------
+  // AWB assignment
+  // -------------------------------------------------------------------------
+
+  async assignCourier(shipmentId: number): Promise<{
+    awbCode: string;
+    courierName: string | null;
+    courierCompanyId: number | null;
+    freightCharge: number | null;
+  }> {
+    const resp = await this.post<{
+      response?: {
+        data?: {
+          awb_code?: string;
+          courier_name?: string;
+          courier_company_id?: number;
+          freight_charge?: number | string;
+          rate?: number | string;
+          awb_assign_error?: string;
+        };
+      };
+    }>("/courier/assign/awb", { shipment_id: String(shipmentId) } as Record<string, unknown>);
+
+    const d = resp.response?.data;
+    const awb = d?.awb_code ?? "";
+    if (!awb) {
+      const reason = d?.awb_assign_error || "No AWB returned by Shiprocket.";
+      throw new Error(reason);
+    }
+
+    const rawFreight = d?.freight_charge ?? d?.rate;
+    const freight = rawFreight != null && rawFreight !== "" ? Number(rawFreight) : NaN;
+
+    return {
+      awbCode: awb,
+      courierName: d?.courier_name ?? null,
+      courierCompanyId: d?.courier_company_id ?? null,
+      freightCharge: Number.isFinite(freight) ? freight : null,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Label, Invoice, Manifest
+  // -------------------------------------------------------------------------
+
+  /** Generate shipping label — uses the correct /courier/generate/label endpoint. */
+  async generateLabel(shiprocketShipmentId: string): Promise<string | null> {
+    try {
+      const resp = await this.post<{ label_created?: number; label_url?: string }>(
+        "/courier/generate/label",
+        { shipment_id: [Number(shiprocketShipmentId)] } as Record<string, unknown>,
+      );
+      logger.info("Shiprocket label response", { shiprocketShipmentId, resp: JSON.stringify(resp) });
+      const url = resp.label_url ?? null;
+      return url && url.length > 0 ? url : null;
+    } catch (err) {
+      logger.warn("Shiprocket label generation failed", { shiprocketShipmentId, err });
+      return null;
+    }
+  }
+
+  /** Generate invoice PDF for a Shiprocket order. */
+  async generateInvoice(shiprocketOrderId: string): Promise<string | null> {
+    try {
+      const resp = await this.post<{ is_invoice_created?: boolean; invoice_url?: string }>(
+        "/orders/print/invoice",
+        { ids: [Number(shiprocketOrderId)] } as Record<string, unknown>,
+      );
+      return resp.invoice_url ?? null;
+    } catch (err) {
+      logger.warn("Shiprocket invoice generation failed", { shiprocketOrderId, err });
+      return null;
+    }
+  }
+
+  /** Generate manifest PDF. Falls back to /manifests/print if primary call returns no URL. */
+  async generateManifest(shiprocketShipmentId: string): Promise<string | null> {
+    try {
+      const gen = await this.post<{ status?: number; manifest_url?: string }>(
+        "/manifests/generate",
+        { shipment_id: [Number(shiprocketShipmentId)] } as Record<string, unknown>,
+      );
+      if (gen.manifest_url) return gen.manifest_url;
+
+      const printed = await this.post<{ manifest_url?: string }>(
+        "/manifests/print",
+        { order_ids: [Number(shiprocketShipmentId)] } as Record<string, unknown>,
+      );
+      return printed.manifest_url ?? null;
+    } catch (err) {
+      logger.warn("Shiprocket manifest generation failed", { shiprocketShipmentId, err });
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Serviceability / freight calculation
+  // -------------------------------------------------------------------------
+
   /**
-   * Register a new pickup location in Shiprocket.
-   * Safe to call multiple times — silently ignores "already exists" errors.
+   * Calculate the actual courier freight for a route via the serviceability API.
+   * Prefers the assigned courier (by id, then name); falls back to recommended/cheapest.
    */
+  async getFreightCharge(opts: {
+    pickupPincode: string;
+    deliveryPincode: string;
+    weight: number;
+    courierCompanyId?: number | null;
+    courierName?: string | null;
+  }): Promise<number | null> {
+    if (!opts.pickupPincode || !opts.deliveryPincode) return null;
+    try {
+      const qs = new URLSearchParams({
+        pickup_postcode: opts.pickupPincode,
+        delivery_postcode: opts.deliveryPincode,
+        weight: String(opts.weight || 0.5),
+        cod: "0",
+      });
+      const data = await this.get<{
+        data?: {
+          available_courier_companies?: Array<{
+            courier_company_id?: number;
+            courier_name?: string;
+            freight_charge?: number | string;
+            rate?: number | string;
+            is_recommended?: number;
+          }>;
+        };
+      }>(`/courier/serviceability/?${qs.toString()}`);
+
+      const list = data.data?.available_courier_companies ?? [];
+      if (!list.length) return null;
+
+      const byId   = opts.courierCompanyId ? list.find((c) => c.courier_company_id === opts.courierCompanyId) : undefined;
+      const byName = opts.courierName ? list.find((c) => (c.courier_name || "").toLowerCase() === opts.courierName!.toLowerCase()) : undefined;
+      const recommended = list.find((c) => c.is_recommended === 1);
+      const chosen = byId ?? byName ?? recommended ?? list[0];
+
+      const raw = chosen.freight_charge ?? chosen.rate;
+      const n = raw != null && raw !== "" ? Number(raw) : NaN;
+      return Number.isFinite(n) ? n : null;
+    } catch (err) {
+      logger.warn("Shiprocket serviceability lookup failed", { opts, err });
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Pickup location pincode resolution (cached per process lifetime)
+  // -------------------------------------------------------------------------
+
+  private pickupPincodeCache = new Map<string, string | null>();
+
+  async getPickupPincode(nickname: string): Promise<string | null> {
+    if (this.pickupPincodeCache.has(nickname)) return this.pickupPincodeCache.get(nickname) ?? null;
+    try {
+      const data = await this.get<{
+        data?: {
+          shipping_address?: Array<{ pickup_location?: string; pin_code?: string | number }>;
+        };
+      }>("/settings/company/pickup");
+      const loc = data.data?.shipping_address?.find((l) => l.pickup_location === nickname);
+      const pin = loc?.pin_code != null ? String(loc.pin_code) : null;
+      this.pickupPincodeCache.set(nickname, pin);
+      return pin;
+    } catch {
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Idempotency: recover an existing Shiprocket order by our internal order number
+  // -------------------------------------------------------------------------
+
+  async findShiprocketOrderByNumber(orderNumber: string): Promise<{
+    shiprocketOrderId: string;
+    shiprocketShipmentId: string;
+    awbCode: string | null;
+    courierName: string | null;
+    courierCompanyId: number | null;
+    freightCharge: number | null;
+  } | null> {
+    type Row = {
+      id: number;
+      channel_order_id: string;
+      status?: string;
+      shipments?: Array<{
+        id: number;
+        awb?: string;
+        courier?: string;
+        courier_id?: number;
+        shipping_charges?: number | string;
+      }>;
+    };
+
+    const pick = (rows: Row[]) => rows.find((o) => o.channel_order_id === orderNumber) ?? null;
+
+    let match: Row | null = null;
+    try {
+      const searched = await this.get<{ data?: Row[] }>(
+        `/orders?per_page=50&search=${encodeURIComponent(orderNumber)}`
+      );
+      match = pick(searched.data ?? []);
+    } catch { /* fall through */ }
+
+    if (!match) {
+      try {
+        const recent = await this.get<{ data?: Row[] }>("/orders?per_page=50");
+        match = pick(recent.data ?? []);
+      } catch { return null; }
+    }
+    if (!match) return null;
+
+    const sh = match.shipments?.[0];
+    const sc = sh?.shipping_charges;
+    const scNum = sc != null && sc !== "" ? Number(sc) : NaN;
+
+    return {
+      shiprocketOrderId: String(match.id),
+      shiprocketShipmentId: sh ? String(sh.id) : "",
+      awbCode: sh?.awb ? String(sh.awb) : null,
+      courierName: sh?.courier ? String(sh.courier) : null,
+      courierCompanyId: sh?.courier_id ?? null,
+      freightCharge: Number.isFinite(scNum) && scNum > 0 ? scNum : null,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Label fallback: fetch from order details
+  // -------------------------------------------------------------------------
+
+  async getLabelFromOrderDetails(shiprocketOrderId: string): Promise<string | null> {
+    try {
+      const resp = await this.get<Record<string, unknown>>(`/orders/show/${shiprocketOrderId}`);
+      logger.info("Shiprocket order details response", { shiprocketOrderId, resp: JSON.stringify(resp) });
+
+      const data = (resp as any)?.data ?? resp;
+      const shipments: unknown[] = data?.shipments ?? data?.shipment ?? [];
+      for (const s of shipments) {
+        const label = (s as any)?.label ?? (s as any)?.label_url ?? (s as any)?.awb_label_url;
+        if (label && typeof label === "string" && label.startsWith("http")) return label;
+      }
+      const topLevel = (resp as any)?.label_url ?? (resp as any)?.label ?? (data as any)?.label_url;
+      if (topLevel && typeof topLevel === "string" && topLevel.startsWith("http")) return topLevel;
+      return null;
+    } catch (err) {
+      logger.warn("Shiprocket order details fetch failed", { shiprocketOrderId, err });
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Tracking
+  // -------------------------------------------------------------------------
+
+  async trackShipment(awb: string): Promise<{
+    status: string;
+    canonicalStatus: CanonicalShipmentStatus;
+    currentLocation?: string;
+    lastUpdated?: string;
+    estimatedDelivery?: string | null;
+    events: TrackingEvent[];
+    courierName: string | null;
+  }> {
+    const resp = await this.get<{
+      tracking_data?: {
+        shipment_status?: number;
+        shipment_track?: Array<{
+          current_status?: string;
+          courier_name?: string;
+          edd?: string;
+        }>;
+        shipment_track_activities?: Array<{
+          status?: string;
+          activity?: string;
+          location?: string;
+          date?: string;
+        }>;
+        etd?: string;
+      };
+    }>(`/courier/track/awb/${awb}`);
+
+    const td = resp.tracking_data;
+    const track = td?.shipment_track?.[0];
+    const activities = td?.shipment_track_activities ?? [];
+
+    const events: TrackingEvent[] = activities.map((a) => ({
+      status: mapShiprocketStatus(a.status || a.activity || ""),
+      label: a.activity || a.status || "Update",
+      location: a.location || "",
+      timestamp: a.date || "",
+    }));
+
+    const rawStatus = track?.current_status || "";
+
+    return {
+      status: rawStatus,
+      canonicalStatus: mapShiprocketStatus(rawStatus),
+      currentLocation: activities[0]?.location,
+      lastUpdated: activities[0]?.date,
+      estimatedDelivery: track?.edd || td?.etd || null,
+      events,
+      courierName: track?.courier_name ?? null,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Pickup location management
+  // -------------------------------------------------------------------------
+
   async addPickupLocation(params: {
     locationName: string;
     name: string;
@@ -287,7 +671,7 @@ class ShiprocketClient {
         pin_code: params.pinCode,
         lat: "",
         long: "",
-      });
+      } as Record<string, unknown>);
       logger.info("Shiprocket pickup location registered", { locationName: params.locationName });
     } catch (err: any) {
       const msg: string = (err?.message ?? "").toLowerCase();
@@ -299,13 +683,10 @@ class ShiprocketClient {
     }
   }
 
-  /**
-   * List all registered Shiprocket pickup locations for this account.
-   */
   async getPickupLocations(): Promise<Array<{ name: string; city: string; status: number }>> {
-    const resp = await this.get<{ data: { shipping_address: Array<{ pickup_location: string; city: string; status: number }> } }>(
-      "/settings/company/pickup"
-    );
+    const resp = await this.get<{
+      data: { shipping_address: Array<{ pickup_location: string; city: string; status: number }> };
+    }>("/settings/company/pickup");
     return (resp.data?.shipping_address ?? []).map((l) => ({
       name: l.pickup_location,
       city: l.city,
@@ -313,12 +694,6 @@ class ShiprocketClient {
     }));
   }
 
-  /**
-   * Returns the Shiprocket pickup location name for a brand.
-   * Pickup locations must be pre-registered in the Shiprocket dashboard.
-   * The location name is stored in brand_details.shiprocket_pickup_location.
-   * Falls back to "Primary" if not configured.
-   */
   async getBrandPickupLocation(brandId: string): Promise<string> {
     const { data } = await supabaseAdmin
       .from("brand_details")
@@ -332,108 +707,13 @@ class ShiprocketClient {
       return location;
     }
 
-    // Derive the deterministic name that syncPickupLocation would have registered.
-    // This handles the race where syncPickupLocation succeeded in Shiprocket but
-    // the DB update failed, or where the column was never written.
     const derivedName = `trodec-brand-${brandId.replace(/-/g, "").slice(0, 12)}`;
     logger.warn("Brand has no Shiprocket pickup location in DB, using derived name", { brandId, derivedName });
     return derivedName;
   }
 
-  /**
-   * Generate a shipping label PDF for a shipment and return the URL.
-   * Must be called after AWB is assigned. Returns null if generation fails.
-   */
-  async generateLabel(shiprocketShipmentId: string): Promise<string | null> {
-    try {
-      const resp = await this.post<Record<string, unknown>>(
-        "/orders/print/label",
-        { shipment_id: [Number(shiprocketShipmentId)] },
-      );
-      // Log full response so we can see exactly what Shiprocket returns
-      logger.info("Shiprocket label full response", { shiprocketShipmentId, resp: JSON.stringify(resp) });
-
-      // Handle both top-level and nested label_url
-      const labelUrl =
-        (resp.label_url as string | undefined) ||
-        ((resp as any)?.response?.label_url as string | undefined) ||
-        null;
-
-      return labelUrl && labelUrl.length > 0 ? labelUrl : null;
-    } catch (err) {
-      logger.warn("Shiprocket label generation failed", { shiprocketShipmentId, err });
-      return null;
-    }
-  }
-
-  /**
-   * Auto-assign best courier to a shipment and return AWB.
-   */
-  async assignCourier(shipmentId: number): Promise<string> {
-    const resp = await this.post<{ response?: { data?: { awb_code?: string } } }>(
-      "/courier/assign/awb",
-      { shipment_id: String(shipmentId) }
-    );
-    return resp.response?.data?.awb_code ?? "";
-  }
-
-  /**
-   * Fetch label URL from Shiprocket order details — fallback when print/label returns 404.
-   */
-  async getLabelFromOrderDetails(shiprocketOrderId: string): Promise<string | null> {
-    try {
-      const resp = await this.get<Record<string, unknown>>(`/orders/show/${shiprocketOrderId}`);
-      logger.info("Shiprocket order details response", { shiprocketOrderId, resp: JSON.stringify(resp) });
-
-      // Try common response shapes Shiprocket uses
-      const data = (resp as any)?.data ?? resp;
-      const shipments: unknown[] = data?.shipments ?? data?.shipment ?? [];
-      for (const s of shipments) {
-        const label = (s as any)?.label ?? (s as any)?.label_url ?? (s as any)?.awb_label_url;
-        if (label && typeof label === "string" && label.startsWith("http")) return label;
-      }
-      // Also check top-level label fields
-      const topLevel = (resp as any)?.label_url ?? (resp as any)?.label ?? (data as any)?.label_url;
-      if (topLevel && typeof topLevel === "string" && topLevel.startsWith("http")) return topLevel;
-
-      return null;
-    } catch (err) {
-      logger.warn("Shiprocket order details fetch failed", { shiprocketOrderId, err });
-      return null;
-    }
-  }
-
-  /**
-   * Cancel a Shiprocket order.
-   */
   async cancelOrder(shiprocketOrderIds: string[]): Promise<void> {
-    await this.post("/orders/cancel", { ids: shiprocketOrderIds });
-  }
-
-  /**
-   * Track a shipment by AWB code.
-   */
-  async trackShipment(awb: string): Promise<{
-    status: string;
-    currentLocation?: string;
-    lastUpdated?: string;
-  }> {
-    const resp = await this.get<{
-      tracking_data?: {
-        track_status?: number;
-        shipment_status?: string;
-        shipment_track?: Array<{ date: string; location: string; "sr-status-label": string }>;
-      };
-    }>(`/courier/track/awb/${awb}`);
-
-    const track = resp.tracking_data;
-    const latest = track?.shipment_track?.[0];
-
-    return {
-      status: track?.shipment_status ?? "Unknown",
-      currentLocation: latest?.location,
-      lastUpdated: latest?.date,
-    };
+    await this.post("/orders/cancel", { ids: shiprocketOrderIds } as Record<string, unknown>);
   }
 }
 
@@ -446,7 +726,9 @@ export const shiprocketClient = new ShiprocketClient();
 class LogisticsService {
   /**
    * Create a FORWARD shipment after payment is confirmed.
-   * Calls Shiprocket API, stores the shipment, and advances order status to SHIPPED.
+   * Full pipeline: create order → assign AWB → generate label + invoice + manifest.
+   * Idempotent: recovers existing Shiprocket orders to avoid duplicates.
+   * Actual shipping freight is stored back to orders.actual_shipping_cost.
    */
   async createForwardShipment(params: {
     orderId: string;
@@ -455,49 +737,108 @@ class LogisticsService {
     items?: ShiprocketOrderItem[];
     totalAmount?: number;
     pickupLocation?: string;
+    weight?: number;
+    length?: number;
+    breadth?: number;
+    height?: number;
   }): Promise<Shipment> {
-    const { orderId, fromAddress, toAddress, items = [], totalAmount = 0, pickupLocation } = params;
+    const {
+      orderId, fromAddress, toAddress, items = [],
+      totalAmount = 0, pickupLocation,
+      weight = 0.5, length = 10, breadth = 10, height = 10,
+    } = params;
 
     let trackingId = "";
     let shiprocketOrderId: string | null = null;
     let shiprocketShipmentId: string | null = null;
     let carrier = "Shiprocket";
     let labelUrl: string | null = null;
+    let invoiceUrl: string | null = null;
+    let manifestUrl: string | null = null;
+    let freightCharge: number | null = null;
+    let courierCompanyId: number | null = null;
+    let courierName: string | null = null;
 
     try {
       const to = toAddress as unknown as ShiprocketAddress;
 
-      const result = await shiprocketClient.createForwardOrder({
-        internalOrderId: orderId,
-        orderDate: new Date().toISOString().split("T")[0],
-        from: fromAddress as unknown as ShiprocketAddress,
-        to,
-        items: items.length > 0 ? items : [{ name: "Product", sku: "SKU-001", units: 1, selling_price: totalAmount }],
-        totalAmount,
-        pickupLocation,
-      });
+      // Idempotency: recover an existing order to avoid duplicates
+      const existing = await shiprocketClient.findShiprocketOrderByNumber(orderId).catch(() => null);
+      if (existing) {
+        shiprocketOrderId   = existing.shiprocketOrderId;
+        shiprocketShipmentId = existing.shiprocketShipmentId;
+        trackingId          = existing.awbCode ?? "";
+        courierName         = existing.courierName;
+        courierCompanyId    = existing.courierCompanyId;
+        freightCharge       = existing.freightCharge;
+        logger.info("Recovered existing Shiprocket order", { orderId, shiprocketOrderId });
+      }
 
-      trackingId = result.trackingId;
-      shiprocketOrderId = result.shiprocketOrderId;
-      shiprocketShipmentId = result.shiprocketShipmentId;
-      carrier = result.courier;
+      if (!shiprocketOrderId || !shiprocketShipmentId) {
+        const result = await shiprocketClient.createForwardOrder({
+          internalOrderId: orderId,
+          orderDate: new Date().toISOString().split("T")[0],
+          from: fromAddress as unknown as ShiprocketAddress,
+          to,
+          items: items.length > 0 ? items : [{ name: "Product", sku: "SKU-001", units: 1, selling_price: totalAmount }],
+          totalAmount,
+          pickupLocation,
+          weight,
+          length,
+          breadth,
+          height,
+        });
 
-      logger.info("Shiprocket forward order created", { orderId, trackingId, shiprocketOrderId });
+        shiprocketOrderId    = result.shiprocketOrderId;
+        shiprocketShipmentId = result.shiprocketShipmentId;
+        trackingId           = result.trackingId;
+        carrier              = result.courier;
+        freightCharge        = result.freightCharge;
+        courierCompanyId     = result.courierCompanyId;
+        courierName          = result.courier;
+        logger.info("Shiprocket forward order created", { orderId, trackingId, shiprocketOrderId });
+      }
 
-      // Generate shipping label now that AWB is assigned
-      if (shiprocketShipmentId && trackingId && !trackingId.startsWith("TRK-PENDING")) {
-        labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId);
-        if (labelUrl) {
-          logger.info("Shiprocket label generated", { orderId, labelUrl });
+      // If freight not returned at AWB time, look it up via serviceability API
+      if (freightCharge == null && trackingId && pickupLocation) {
+        const pickupPincode = await shiprocketClient.getPickupPincode(pickupLocation).catch(() => null);
+        const deliveryPincode = (to as any).postalCode ?? "";
+        if (pickupPincode && deliveryPincode) {
+          freightCharge = await shiprocketClient.getFreightCharge({
+            pickupPincode,
+            deliveryPincode,
+            weight,
+            courierCompanyId,
+            courierName,
+          }).catch(() => null);
         }
       }
+
+      // Store actual_shipping_cost back to orders (never charged to customer, used for brand payout)
+      if (freightCharge != null && freightCharge > 0) {
+        await supabaseAdmin
+          .from("orders")
+          .update({ actual_shipping_cost: freightCharge })
+          .eq("id", orderId);
+        logger.info("Actual shipping cost stored", { orderId, freightCharge });
+      }
+
+      // Generate label, invoice, manifest (all best-effort)
+      if (shiprocketShipmentId && trackingId && !trackingId.startsWith("TRK-PENDING")) {
+        labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId);
+        if (labelUrl) logger.info("Label generated", { orderId, labelUrl });
+
+        invoiceUrl = await shiprocketClient.generateInvoice(shiprocketOrderId!);
+        if (invoiceUrl) logger.info("Invoice generated", { orderId, invoiceUrl });
+
+        manifestUrl = await shiprocketClient.generateManifest(shiprocketShipmentId);
+        if (manifestUrl) logger.info("Manifest generated", { orderId, manifestUrl });
+      }
     } catch (err) {
-      // If Shiprocket fails, generate a fallback tracking ID so the order isn't stuck
       logger.error("Shiprocket createForwardOrder failed, using fallback tracking", { orderId, err });
       trackingId = "TRK-PENDING-" + orderId.slice(0, 8).toUpperCase();
     }
 
-    // awb_code is stored separately so it can be updated later after KYC
     const awbCode = trackingId.startsWith("TRK-PENDING") ? null : trackingId;
 
     const { data: shipmentRow, error: shipmentError } = await supabaseAdmin
@@ -509,6 +850,8 @@ class LogisticsService {
         shiprocket_shipment_id: shiprocketShipmentId,
         awb_code: awbCode,
         label_url: labelUrl,
+        invoice_url: invoiceUrl,
+        manifest_url: manifestUrl,
         carrier,
         type: "FORWARD",
         status: "PENDING",
@@ -526,9 +869,6 @@ class LogisticsService {
 
     const shipment = toShipment(shipmentRow as ShipmentRow);
 
-    // Only link the shipment — do NOT advance order status here.
-    // The order moves to "shipped" via the Shiprocket webhook (updateShipmentStatus)
-    // when the courier actually picks it up, not the moment we create the shipment record.
     const { error: orderError } = await supabaseAdmin
       .from("orders")
       .update({ shipment_id: shipment.id })
@@ -547,9 +887,9 @@ class LogisticsService {
    */
   async updateShipmentStatus(shipmentId: string, status: ShipmentStatus): Promise<Shipment> {
     const timestamps: Record<string, string> = {};
-    if (status === "SHIPPED") timestamps.shipped_at = new Date().toISOString();
-    if (status === "DELIVERED") timestamps.delivered_at = new Date().toISOString();
-    if (status === "RETURNED" || status === "RTO") timestamps.returned_at = new Date().toISOString();
+    if (status === "SHIPPED")                            timestamps.shipped_at   = new Date().toISOString();
+    if (status === "DELIVERED")                          timestamps.delivered_at = new Date().toISOString();
+    if (status === "RETURNED" || status === "RTO")       timestamps.returned_at  = new Date().toISOString();
 
     const { data: shipmentRow, error } = await supabaseAdmin
       .from("shipments")
@@ -567,15 +907,13 @@ class LogisticsService {
 
     if (shipment.orderId) {
       const orderStatusMap: Partial<Record<ShipmentStatus, "shipped" | "delivered" | "cancelled">> = {
-        SHIPPED: "shipped",
+        SHIPPED:   "shipped",
         DELIVERED: "delivered",
-        RETURNED: "cancelled",
-        RTO: "cancelled",
+        RETURNED:  "cancelled",
+        RTO:       "cancelled",
       };
       const newOrderStatus = orderStatusMap[status];
       if (newOrderStatus) {
-        // Use lazy import to avoid circular dep (order.service imports logistics.service)
-        // Going through orderService ensures hooks fire: commission on delivery, refund on cancel
         import("./order.service").then(({ orderService }) =>
           orderService.updateOrderStatus(shipment.orderId!, newOrderStatus).catch((err) =>
             logger.error("Failed to sync order status from shipment webhook", { orderId: shipment.orderId, newOrderStatus, err })
@@ -588,9 +926,7 @@ class LogisticsService {
   }
 
   /**
-   * Cancel a Shiprocket order when the order is cancelled before pickup.
-   * Finds any forward shipment for the order, cancels it on Shiprocket, and marks it RETURNED.
-   * Does not create a new return shipment record — use createReturnShipment for post-delivery returns.
+   * Cancel the forward shipment on Shiprocket when an order is cancelled.
    */
   async cancelOrderShipment(orderId: string): Promise<void> {
     const { data: rows } = await supabaseAdmin
@@ -602,18 +938,15 @@ class LogisticsService {
       .limit(1);
 
     const shipmentRow = rows?.[0] as { id: string; shiprocket_order_id: string | null; status: string } | undefined;
-
     if (!shipmentRow) {
-      // Forward shipment not created yet (race: confirmed → cancelled before Shiprocket responded).
-      // Poll the DB briefly for the Shiprocket order ID so we can cancel it.
-      logger.warn("No forward shipment found at cancellation time — checking for pending Shiprocket order", { orderId });
+      logger.warn("No forward shipment found at cancellation time", { orderId });
       return;
     }
 
     if (shipmentRow.shiprocket_order_id) {
       try {
         await shiprocketClient.cancelOrder([shipmentRow.shiprocket_order_id]);
-        logger.info("Shiprocket order cancelled and wallet refunded", { orderId, shiprocketOrderId: shipmentRow.shiprocket_order_id });
+        logger.info("Shiprocket order cancelled", { orderId, shiprocketOrderId: shipmentRow.shiprocket_order_id });
       } catch (err) {
         logger.warn("Shiprocket cancel API failed", { orderId, err });
       }
@@ -624,11 +957,11 @@ class LogisticsService {
       .update({ status: "RETURNED", returned_at: new Date().toISOString() })
       .eq("id", shipmentRow.id);
 
-    logger.info("Forward shipment marked RETURNED on order cancellation", { orderId, shipmentId: shipmentRow.id });
+    logger.info("Forward shipment marked RETURNED on order cancellation", { orderId });
   }
 
   /**
-   * Create a RETURN shipment — cancels on Shiprocket and reverses addresses.
+   * Create a RETURN shipment — cancels forward on Shiprocket, reverses addresses.
    */
   async createReturnShipment(orderId: string): Promise<Shipment> {
     const { data: forwardRow, error: fetchError } = await supabaseAdmin
@@ -646,11 +979,9 @@ class LogisticsService {
 
     const forward = toShipment(forwardRow as ShipmentRow);
 
-    // Cancel on Shiprocket if we have the order ID
     if (forward.shiprocketOrderId) {
       try {
         await shiprocketClient.cancelOrder([forward.shiprocketOrderId]);
-        logger.info("Shiprocket order cancelled", { shiprocketOrderId: forward.shiprocketOrderId });
       } catch (err) {
         logger.warn("Shiprocket cancel failed (continuing anyway)", { err });
       }
@@ -697,10 +1028,11 @@ class LogisticsService {
     let shiprocketOrderId: string | null = null;
     let shiprocketShipmentId: string | null = null;
     let carrier = "Shiprocket";
+    let labelUrl: string | null = null;
 
     try {
       const from = fromAddress as unknown as ShiprocketAddress;
-      const to = toAddress as unknown as ShiprocketAddress;
+      const to   = toAddress   as unknown as ShiprocketAddress;
 
       const result = await shiprocketClient.createForwardOrder({
         internalOrderId: `SMP-${pitchId.replace(/-/g, "").slice(0, 16)}`,
@@ -712,22 +1044,23 @@ class LogisticsService {
         pickupLocation,
       });
 
-      shiprocketOrderId = result.shiprocketOrderId;
+      shiprocketOrderId    = result.shiprocketOrderId;
       shiprocketShipmentId = result.shiprocketShipmentId;
-      trackingId = result.trackingId; // may be "" if AWB not yet assigned
-      carrier = result.courier;
+      trackingId           = result.trackingId;
+      carrier              = result.courier;
 
-      logger.info("Shiprocket sample order created", { pitchId, shiprocketOrderId, shiprocketShipmentId, awb: trackingId || "pending" });
+      if (shiprocketShipmentId && trackingId) {
+        labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId);
+      }
+
+      logger.info("Shiprocket sample order created", { pitchId, shiprocketOrderId, awb: trackingId || "pending" });
     } catch (err) {
       logger.error("Shiprocket createSampleShipment failed, using fallback", { pitchId, err });
     }
 
-    // If AWB is empty but we have a Shiprocket shipment ID, use that as a placeholder
-    // If Shiprocket failed entirely, generate a local fallback
     const awbCode = trackingId || null;
     const displayTrackingId = trackingId
       || (shiprocketShipmentId ? `SR-${shiprocketShipmentId}` : `SAMPLE-${pitchId.slice(0, 8).toUpperCase()}`);
-    // PENDING until wallet recharged and AWB assigned; SHIPPED once AWB is available
     const shipmentStatus: ShipmentStatus = trackingId ? "SHIPPED" : "PENDING";
 
     const { data: shipmentRow, error } = await supabaseAdmin
@@ -738,6 +1071,7 @@ class LogisticsService {
         shiprocket_order_id: shiprocketOrderId,
         shiprocket_shipment_id: shiprocketShipmentId,
         awb_code: awbCode,
+        label_url: labelUrl,
         carrier,
         type: "SAMPLE",
         status: shipmentStatus,
@@ -753,18 +1087,21 @@ class LogisticsService {
       throw ApiError.internal("Failed to create sample shipment");
     }
 
-    logger.info("Sample shipment saved to DB", { pitchId, displayTrackingId, awbCode, shiprocketOrderId });
+    logger.info("Sample shipment saved to DB", { pitchId, displayTrackingId, awbCode });
     return toShipment(shipmentRow as ShipmentRow);
   }
 
   /**
-   * Get live tracking info from Shiprocket for a shipment.
-   * Uses awb_code if available, otherwise falls back to DB status.
+   * Get live tracking info and persist full event timeline.
    */
   async trackShipment(shipmentId: string): Promise<{
     status: string;
+    canonicalStatus: CanonicalShipmentStatus;
     currentLocation?: string;
     lastUpdated?: string;
+    estimatedDelivery?: string | null;
+    events: TrackingEvent[];
+    courierName: string | null;
     trackingId: string;
     awbCode: string | null;
     shiprocketShipmentId: string | null;
@@ -777,14 +1114,28 @@ class LogisticsService {
 
     if (error || !data) throw ApiError.notFound("Shipment not found");
 
-    const row = data as { tracking_id: string; awb_code: string | null; shiprocket_shipment_id: string | null; status: string };
-    const awbCode = row.awb_code;
+    const row = data as {
+      tracking_id: string;
+      awb_code: string | null;
+      shiprocket_shipment_id: string | null;
+      status: string;
+    };
+    const awbCode   = row.awb_code;
     const trackingId = row.tracking_id;
 
-    // If we have a real AWB, get live tracking from Shiprocket
     if (awbCode && !awbCode.startsWith("TRK-PENDING") && !awbCode.startsWith("RTN-") && !awbCode.startsWith("SAMPLE-")) {
       try {
         const live = await shiprocketClient.trackShipment(awbCode);
+
+        // Persist events + ETA back to shipment record
+        await supabaseAdmin
+          .from("shipments")
+          .update({
+            tracking_events:    live.events.length ? live.events : undefined,
+            estimated_delivery: live.estimatedDelivery ?? undefined,
+          })
+          .eq("id", shipmentId);
+
         return { ...live, trackingId, awbCode, shiprocketShipmentId: row.shiprocket_shipment_id };
       } catch {
         // fall through to DB status
@@ -793,6 +1144,9 @@ class LogisticsService {
 
     return {
       status: row.status,
+      canonicalStatus: mapShiprocketStatus(row.status),
+      events: [],
+      courierName: null,
       trackingId,
       awbCode,
       shiprocketShipmentId: row.shiprocket_shipment_id,
@@ -800,8 +1154,7 @@ class LogisticsService {
   }
 
   /**
-   * Regenerate and save the shipping label for a shipment.
-   * Used as a fallback when label generation failed at creation time.
+   * Regenerate and save the shipping label (multi-attempt fallback).
    */
   async refreshLabel(shipmentId: string): Promise<string | null> {
     const { data, error } = await supabaseAdmin
@@ -819,23 +1172,20 @@ class LogisticsService {
       label_url: string | null;
     };
 
-    logger.info("Refreshing label", { shipmentId, shiprocketShipmentId: row.shiprocket_shipment_id, shiprocketOrderId: row.shiprocket_order_id });
+    logger.info("Refreshing label", { shipmentId, shiprocketShipmentId: row.shiprocket_shipment_id });
 
     let labelUrl: string | null = null;
 
-    // Attempt 1: print/label with Shiprocket ORDER ID (Shiprocket quirk — label endpoint uses order_id as shipment_id)
+    // Attempt 1: generate/label with Shiprocket ORDER ID
     if (row.shiprocket_order_id) {
       labelUrl = await shiprocketClient.generateLabel(row.shiprocket_order_id);
     }
-
-    // Attempt 2: print/label with stored shipment_id
+    // Attempt 2: generate/label with shipment ID
     if (!labelUrl && row.shiprocket_shipment_id) {
       labelUrl = await shiprocketClient.generateLabel(row.shiprocket_shipment_id);
     }
-
-    // Attempt 3: fetch from order details endpoint
+    // Attempt 3: order details endpoint
     if (!labelUrl && row.shiprocket_order_id) {
-      logger.info("print/label failed, trying order details fallback", { shiprocketOrderId: row.shiprocket_order_id });
       labelUrl = await shiprocketClient.getLabelFromOrderDetails(row.shiprocket_order_id);
     }
 
@@ -852,9 +1202,6 @@ class LogisticsService {
     return labelUrl;
   }
 
-  /**
-   * Update AWB code for a shipment after courier assignment (post-KYC).
-   */
   async updateAwbCode(shipmentId: string, awbCode: string): Promise<Shipment> {
     const { data, error } = await supabaseAdmin
       .from("shipments")
@@ -869,39 +1216,34 @@ class LogisticsService {
   }
 
   /**
-   * Handle Shiprocket webhook event — update shipment and order status.
+   * Handle Shiprocket webhook — update shipment and order status.
    */
   async handleShiprocketWebhook(payload: Record<string, unknown>): Promise<void> {
-    const awb = payload.awb as string | undefined;
-    const status = payload.current_status as string | undefined;
+    const awb             = payload.awb as string | undefined;
+    const status          = payload.current_status as string | undefined;
     const shiprocketOrderId = typeof payload.order_id === "string" || typeof payload.order_id === "number"
-      ? String(payload.order_id)
-      : "";
+      ? String(payload.order_id) : "";
 
     if (!awb && !shiprocketOrderId) {
       logger.warn("Shiprocket webhook missing awb and order_id", { payload });
       return;
     }
 
-    // Map Shiprocket status → our internal status
-    const statusMap: Record<string, ShipmentStatus> = {
-      "Shipped": "SHIPPED",
-      "In Transit": "SHIPPED",
-      "Out For Delivery": "OUT_FOR_DELIVERY",
-      "Delivered": "DELIVERED",
-      "RTO Initiated": "RTO",
-      "RTO Delivered": "RTO",
-      "Returned": "RETURNED",
-      "Cancelled": "RETURNED",
+    const canonical = status ? mapShiprocketStatus(status) : undefined;
+    const statusMap: Partial<Record<CanonicalShipmentStatus, ShipmentStatus>> = {
+      shipped:          "SHIPPED",
+      in_transit:       "SHIPPED",
+      out_for_delivery: "OUT_FOR_DELIVERY",
+      delivered:        "DELIVERED",
+      cancelled:        "RETURNED",
     };
 
-    const internalStatus: ShipmentStatus | undefined = status ? statusMap[status] : undefined;
+    const internalStatus = canonical ? statusMap[canonical] : undefined;
     if (!internalStatus) {
       logger.info("Shiprocket webhook status not mapped, skipping", { status });
       return;
     }
 
-    // Find shipment by AWB or shiprocket_order_id
     let query = supabaseAdmin.from("shipments").select("id, order_id, status");
     if (awb) {
       query = query.eq("awb_code", awb) as typeof query;
@@ -917,10 +1259,9 @@ class LogisticsService {
       return;
     }
 
-    // Don't regress status
     const statusOrder: ShipmentStatus[] = ["PENDING", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "RETURNED", "RTO"];
     const currentIdx = statusOrder.indexOf(shipmentRow.status as ShipmentStatus);
-    const newIdx = statusOrder.indexOf(internalStatus);
+    const newIdx     = statusOrder.indexOf(internalStatus);
     if (newIdx <= currentIdx) {
       logger.info("Shiprocket webhook: status not advanced, skipping", { current: shipmentRow.status, new: internalStatus });
       return;
@@ -930,9 +1271,6 @@ class LogisticsService {
     logger.info("Shiprocket webhook processed", { shipmentId: shipmentRow.id, status: internalStatus });
   }
 
-  /**
-   * Get the sample shipment for a pitch (brand → expert delivery).
-   */
   async getShipmentByPitchId(pitchId: string): Promise<Shipment | null> {
     const { data, error } = await supabaseAdmin
       .from("shipments")
@@ -951,9 +1289,6 @@ class LogisticsService {
     return data ? toShipment(data as ShipmentRow) : null;
   }
 
-  /**
-   * Get shipment by order ID (returns the latest one).
-   */
   async getShipmentByOrderId(orderId: string): Promise<Shipment | null> {
     const { data, error } = await supabaseAdmin
       .from("shipments")

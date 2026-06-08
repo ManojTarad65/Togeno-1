@@ -144,6 +144,125 @@ export async function getBrandOrders(params?: {
 }
 
 // ============================================
+// Earnings / Payouts
+// ============================================
+
+export interface BrandPayout {
+  id: string;
+  orderId: string;
+  brandId: string;
+  orderAmount: number;
+  shippingCost: number;
+  platformCommission: number;
+  brandNet: number;
+  status: "pending" | "reserved" | "paid" | "reversed";
+  reversedAt: string | null;
+  withdrawalRequestId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BrandEarningsStats {
+  totalEarned: number;
+  pendingPayout: number;
+  inWithdrawal: number;
+  paidOut: number;
+}
+
+export interface BrandBankAccount {
+  id: string;
+  brandId: string;
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  upiId: string | null;
+  isVerified: boolean;
+  isPrimary: boolean;
+  createdAt: string;
+}
+
+export interface BrandWithdrawalRequest {
+  id: string;
+  brandId: string;
+  bankAccountId: string;
+  amount: number;
+  status: "pending" | "approved" | "paid" | "rejected";
+  rejectionReason: string | null;
+  requestedAt: string;
+  processedAt: string | null;
+  paidAt: string | null;
+  transactionRef: string | null;
+  createdAt: string;
+  bankAccount?: { bankName: string; accountNumber: string; upiId: string | null };
+}
+
+export async function getBrandEarnings(params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+}): Promise<{
+  data: BrandPayout[];
+  pagination: { page: number; limit: number; total: number };
+  stats: BrandEarningsStats;
+}> {
+  try {
+    const response = await api.get<ApiSuccessResponse<any>>('/brands/me/earnings', { params });
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function getBrandBankAccounts(): Promise<BrandBankAccount[]> {
+  try {
+    const response = await api.get<ApiSuccessResponse<BrandBankAccount[]>>('/brands/me/bank-accounts');
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function saveBrandBankAccount(data: {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  upiId?: string;
+}): Promise<BrandBankAccount> {
+  try {
+    const response = await api.post<ApiSuccessResponse<BrandBankAccount>>('/brands/me/bank-accounts', data);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function getBrandWithdrawals(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<{ data: BrandWithdrawalRequest[]; pagination: { page: number; limit: number; total: number } }> {
+  try {
+    const response = await api.get<ApiSuccessResponse<any>>('/brands/me/withdrawals', { params });
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function requestBrandWithdrawal(data: {
+  amount: number;
+  bankAccountId: string;
+}): Promise<BrandWithdrawalRequest> {
+  try {
+    const response = await api.post<ApiSuccessResponse<BrandWithdrawalRequest>>('/brands/me/withdrawals', data);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+// ============================================
 // Legacy BrandService object for compatibility
 // ============================================
 

@@ -7,6 +7,7 @@ export const createOrderSchema = z.object({
   shippingAddressId: z.string().uuid("Invalid shipping address ID"),
   billingAddressId: z.string().uuid("Invalid billing address ID"),
   notes: z.string().optional().nullable(),
+  promoCode: z.string().optional().nullable(),
   // Cart items from frontend localStorage cart
   items: z.array(z.object({
     productId: z.string().uuid("Invalid product ID"),
@@ -24,10 +25,10 @@ export const updateOrderStatusSchema = z.object({
 });
 
 /**
- * Schema for updating an order
+ * Schema for updating an order — consumers may only update notes.
+ * Status transitions go through dedicated endpoints.
  */
 export const updateOrderSchema = z.object({
-  status: z.enum(["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"]).optional(),
   notes: z.string().optional().nullable(),
 });
 

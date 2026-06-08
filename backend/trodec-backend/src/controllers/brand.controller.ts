@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { brandService } from '@/services/brand.service';
+import { brandPayoutService } from '@/services/brand_payout.service';
 import { productService } from '@/services/product.service';
 import { supabaseAdmin } from '@/config/supabase';
 import { sendSuccess } from '@/utils/response';
@@ -318,6 +319,133 @@ class BrandController {
       const data = req.body as UpdatePickupSettingsInput;
       await brandService.updatePickupSettings(req.user!.id, data);
       sendSuccess(res, null, 200, "Pickup settings updated");
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================================
+  // EARNINGS / PAYOUTS
+  // ============================================================
+
+  /**
+   * GET /brands/me/earnings
+   * Payout stats + paginated list of brand_payouts.
+   */
+  async getEarnings(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const brandId = req.user!.id;
+      const { page = '1', limit = '20', status } = req.query as any;
+      const result = await brandPayoutService.getBrandPayouts(brandId, {
+        page: parseInt(page) || 1,
+        limit: parseInt(limit) || 20,
+        status: status || undefined,
+      });
+      sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================================
+  // BANK ACCOUNTS
+  // ============================================================
+
+  /** GET /brands/me/bank-accounts */
+  async getBankAccounts(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const accounts = await brandPayoutService.getBankAccounts(req.user!.id);
+      sendSuccess(res, accounts);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /brands/me/bank-accounts */
+  async saveBankAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { accountHolderName, accountNumber, ifscCode, bankName, upiId } = req.body;
+      if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
+        throw ApiError.badRequest("accountHolderName, accountNumber, ifscCode, bankName are required");
+      }
+      const account = await brandPayoutService.saveBankAccount(req.user!.id, {
+        accountHolderName,
+        accountNumber,
+        ifscCode,
+        bankName,
+        upiId,
+      });
+      sendSuccess(res, account, 201, "Bank account saved");
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================================
+  // WITHDRAWAL REQUESTS
+  // ============================================================
+
+  /** GET /brands/me/withdrawals */
+  async getWithdrawals(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { page = '1', limit = '20' } = req.query as any;
+      const result = await brandPayoutService.getWithdrawalRequests(req.user!.id, {
+        page: parseInt(page) || 1,
+        limit: parseInt(limit) || 20,
+      });
+      sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /brands/me/withdrawals */
+  async requestWithdrawal(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { amount, bankAccountId } = req.body;
+      if (!amount || !bankAccountId) throw ApiError.badRequest("amount and bankAccountId are required");
+      const withdrawal = await brandPayoutService.requestWithdrawal(req.user!.id, {
+        amount: Number(amount),
+        bankAccountId,
+      });
+      sendSuccess(res, withdrawal, 201, "Withdrawal request submitted");
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================================
+  // ADMIN — brand withdrawal management
+  // ============================================================
+
+  /** GET /brands/withdrawals (admin) */
+  async adminGetWithdrawals(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { page = '1', limit = '20', status } = req.query as any;
+      const result = await brandPayoutService.getAllWithdrawalRequests({
+        page: parseInt(page) || 1,
+        limit: parseInt(limit) || 20,
+        status: status || undefined,
+      });
+      sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /brands/withdrawals/:id/process (admin) */
+  async adminProcessWithdrawal(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const withdrawalId = req.params['id'] as string;
+      const { action, transactionRef, rejectionReason } = req.body;
+      if (!['approved', 'paid', 'rejected'].includes(action)) {
+        throw ApiError.badRequest("action must be approved | paid | rejected");
+      }
+      const result = await brandPayoutService.processWithdrawal(withdrawalId, action, {
+        transactionRef,
+        rejectionReason,
+      });
+      sendSuccess(res, result, 200, `Withdrawal ${action}`);
     } catch (error) {
       next(error);
     }

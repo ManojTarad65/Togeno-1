@@ -15,6 +15,28 @@ export interface OrderItem {
 export type OrderStatus = 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
+export interface OrderTrackingEvent {
+  status: string;
+  label: string;
+  location: string;
+  timestamp: string;
+}
+
+export interface OrderShipment {
+  shipmentId: string;
+  awbCode: string | null;
+  trackingUrl: string | null;
+  carrier: string;
+  status: string;
+  labelUrl: string | null;
+  invoiceUrl: string | null;
+  manifestUrl: string | null;
+  estimatedDelivery: string | null;
+  trackingEvents: OrderTrackingEvent[] | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+}
+
 export interface Order {
   id: string;
   orderNumber?: string;
@@ -25,6 +47,8 @@ export interface Order {
   subtotal: number;
   tax: number;
   shippingCost: number;
+  discountAmount?: number;
+  promoCode?: string | null;
   // Denormalized shipping address fields
   shippingName: string;
   shippingPhone: string;
@@ -35,6 +59,8 @@ export interface Order {
   shippingPostalCode: string;
   shippingCountry: string;
   items: OrderItem[];
+  shipment?: OrderShipment | null;
+  /** @deprecated use shipment.awbCode */
   trackingNumber?: string;
   notes?: string;
   createdAt: string;
@@ -127,6 +153,15 @@ export const OrderService = {
   async cancelOrder(id: string): Promise<Order> {
     try {
       const response = await api.post<ApiSuccessResponse<Order>>(`/orders/${id}/cancel`);
+      return response.data.data;
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    }
+  },
+
+  async confirmReceipt(id: string): Promise<Order> {
+    try {
+      const response = await api.post<ApiSuccessResponse<Order>>(`/orders/${id}/confirm-receipt`);
       return response.data.data;
     } catch (error) {
       throw new Error(getErrorMessage(error));

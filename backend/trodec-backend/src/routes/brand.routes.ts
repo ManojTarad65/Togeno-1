@@ -15,123 +15,68 @@ const router = Router();
 // AUTHENTICATED ROUTES (Current User - Brand Admin)
 // ============================================
 
-/**
- * GET /brands/me
- * Get current user's brand details (brand_admin only)
- */
 router.get('/me', authenticate, requireRole('brand_admin'), brandController.getMyBrand);
-
-/**
- * POST /brands/me
- * Create brand details for current user (brand_admin only)
- */
-router.post(
-  '/me',
-  authenticate,
-  requireRole('brand_admin'),
-  validateBody(createBrandSchema),
-  brandController.createMyBrand
-);
-
-/**
- * PATCH /brands/me
- * Update current user's brand details (brand_admin only)
- */
-router.patch(
-  '/me',
-  authenticate,
-  requireRole('brand_admin'),
-  validateBody(updateBrandSchema),
-  brandController.updateMyBrand
-);
-
-/**
- * DELETE /brands/me
- * Delete current user's brand details (brand_admin only)
- */
+router.post('/me', authenticate, requireRole('brand_admin'), validateBody(createBrandSchema), brandController.createMyBrand);
+router.patch('/me', authenticate, requireRole('brand_admin'), validateBody(updateBrandSchema), brandController.updateMyBrand);
 router.delete('/me', authenticate, requireRole('brand_admin'), brandController.deleteMyBrand);
 
-/**
- * GET /brands/me/products
- * Get current brand's products (brand_admin only)
- */
-router.get('/me/products', authenticate, requireRole('brand_admin'), brandController.getMyProducts);
-
-/**
- * GET /brands/me/stats
- * Get current brand's dashboard stats (brand_admin only)
- */
-router.get('/me/stats', authenticate, requireRole('brand_admin'), brandController.getMyStats);
-
-/**
- * GET /brands/me/orders
- * Get orders containing current brand's products (brand_admin only)
- */
-router.get('/me/orders', authenticate, requireRole('brand_admin'), brandController.getMyOrders);
-
-/**
- * GET /brands/me/pickup-settings
- * Get brand's Shiprocket pickup location + available locations from Shiprocket.
- */
+router.get('/me/products',        authenticate, requireRole('brand_admin'), brandController.getMyProducts);
+router.get('/me/stats',           authenticate, requireRole('brand_admin'), brandController.getMyStats);
+router.get('/me/orders',          authenticate, requireRole('brand_admin'), brandController.getMyOrders);
 router.get('/me/pickup-settings', authenticate, requireRole('brand_admin'), brandController.getPickupSettings);
-
-/**
- * PUT /brands/me/pickup-settings
- * Save the Shiprocket pickup location name for this brand.
- */
-router.put(
-  '/me/pickup-settings',
-  authenticate,
-  requireRole('brand_admin'),
-  validateBody(updatePickupSettingsSchema),
-  brandController.updatePickupSettings
-);
+router.put('/me/pickup-settings', authenticate, requireRole('brand_admin'), validateBody(updatePickupSettingsSchema), brandController.updatePickupSettings);
+router.get('/me/earnings',        authenticate, requireRole('brand_admin'), brandController.getEarnings);
+router.get('/me/bank-accounts',   authenticate, requireRole('brand_admin'), brandController.getBankAccounts);
+router.post('/me/bank-accounts',  authenticate, requireRole('brand_admin'), brandController.saveBankAccount);
+router.get('/me/withdrawals',     authenticate, requireRole('brand_admin'), brandController.getWithdrawals);
+router.post('/me/withdrawals',    authenticate, requireRole('brand_admin'), brandController.requestWithdrawal);
 
 // ============================================
-// PUBLIC ROUTES (Listings)
+// ADMIN ROUTES — must be before /:id to avoid shadowing
 // ============================================
 
 /**
- * GET /brands
- * List all brands (public, filterable by verification status, business type, etc.)
+ * GET  /brands/withdrawals          — admin: list all brand withdrawal requests
+ * POST /brands/withdrawals/:id/process — admin: approve / pay / reject
  */
 router.get(
-  '/',
-  validateQuery(listBrandsQuerySchema),
-  brandController.listBrands
+  '/withdrawals',
+  authenticate,
+  requireRole('admin'),
+  brandController.adminGetWithdrawals,
+);
+
+router.post(
+  '/withdrawals/:id/process',
+  authenticate,
+  requireRole('admin'),
+  brandController.adminProcessWithdrawal,
 );
 
 /**
- * GET /brands/:id
- * Get brand details by ID (public)
- */
-router.get('/:id', brandController.getBrandById);
-
-// ============================================
-// ADMIN ROUTES
-// ============================================
-
-/**
- * POST /brands/:id/verify
- * Verify/unverify a brand (admin only)
+ * POST /brands/:id/verify  — verify/unverify a brand
+ * DELETE /brands/:id       — delete brand
  */
 router.post(
   '/:id/verify',
   authenticate,
   requireRole('admin'),
   validateBody(verifyBrandSchema),
-  brandController.verifyBrand
+  brandController.verifyBrand,
 );
 
-/**
- * DELETE /brands/:id
- * Delete brand by ID (admin only)
- */
 router.delete(
   '/:id',
   authenticate,
   requireRole('admin'),
-  brandController.deleteBrand
+  brandController.deleteBrand,
 );
+
+// ============================================
+// PUBLIC ROUTES — /:id must be last
+// ============================================
+
+router.get('/', validateQuery(listBrandsQuerySchema), brandController.listBrands);
+router.get('/:id', brandController.getBrandById);
 
 export default router;

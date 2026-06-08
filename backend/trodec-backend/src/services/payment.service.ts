@@ -5,6 +5,7 @@ import { logger } from "../utils/logger";
 import { env } from "../config/env";
 import { orderService } from "./order.service";
 import { commissionService } from "./commission.service";
+import { brandPayoutService } from "./brand_payout.service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -275,18 +276,25 @@ class PaymentService {
         })
         .eq("razorpay_order_id", razorpayOrderId);
 
-      // Stamp payment info then trigger the confirmed hook via orderService
+      // Stamp payment info on the order and fetch current status
       const { data: orderRow } = await supabaseAdmin
         .from("orders")
         .update({ payment_status: "paid", payment_id: razorpayPaymentId })
         .eq("razorpay_order_id", razorpayOrderId)
-        .select("id")
+        .select("id, status")
         .single();
 
       if (orderRow) {
-        // Use orderService so the "confirmed" hook fires (triggers forward shipment creation)
-        await orderService.updateOrderStatus(orderRow.id, "confirmed");
-        logger.info("Order confirmed via webhook", { orderId: orderRow.id, eventId });
+        const currentStatus = (orderRow as any).status as string;
+        // Fix #5: skip if already past pending — verifyPayment may have beaten the webhook
+        if (currentStatus === "pending") {
+          await orderService.updateOrderStatus((orderRow as any).id, "confirmed");
+          logger.info("Order confirmed via webhook", { orderId: (orderRow as any).id, eventId });
+        } else {
+          logger.info("Order already past pending, skipping webhook confirm", {
+            orderId: (orderRow as any).id, currentStatus, eventId,
+          });
+        }
       }
     } else if (event === "payment.failed") {
       await supabaseAdmin
@@ -298,14 +306,21 @@ class PaymentService {
         })
         .eq("razorpay_order_id", razorpayOrderId);
 
-      await supabaseAdmin
+      // Fix #4: auto-cancel the order so stock is restored
+      const { data: failedOrderRow } = await supabaseAdmin
         .from("orders")
         .update({ payment_status: "failed" })
-        .eq("razorpay_order_id", razorpayOrderId);
+        .eq("razorpay_order_id", razorpayOrderId)
+        .select("id, status")
+        .single();
 
-      logger.info("Payment failed via webhook", { razorpayOrderId, eventId });
+      if (failedOrderRow && (failedOrderRow as any).status === "pending") {
+        orderService.cancelOrder((failedOrderRow as any).id).catch((err) =>
+          logger.error("Auto-cancel after payment failure failed", { orderId: (failedOrderRow as any).id, err })
+        );
+        logger.info("Order auto-cancelled after payment failure", { orderId: (failedOrderRow as any).id, eventId });
+      }
     } else if (event === "payment.refunded") {
-      // A refund was issued (either via app cancellation flow or manually from Razorpay dashboard)
       const { data: orderRow } = await supabaseAdmin
         .from("orders")
         .select("id")
@@ -313,6 +328,8 @@ class PaymentService {
         .maybeSingle();
 
       if (orderRow) {
+        const orderId = (orderRow as any).id as string;
+
         await supabaseAdmin
           .from("payments")
           .update({ status: "refunded", webhook_event_id: eventId, raw_payload: webhookPayload as Record<string, unknown> })
@@ -321,14 +338,17 @@ class PaymentService {
         await supabaseAdmin
           .from("orders")
           .update({ payment_status: "refunded" })
-          .eq("id", (orderRow as any).id);
+          .eq("id", orderId);
 
-        // Reverse any commission so experts aren't paid for refunded orders
-        commissionService.reverse((orderRow as any).id).catch((err) =>
-          logger.error("Commission reversal failed on refund webhook", { orderId: (orderRow as any).id, err })
+        // Fix #2: reverse both commission AND brand payout on refund
+        commissionService.reverse(orderId).catch((err) =>
+          logger.error("Commission reversal failed on refund webhook", { orderId, err })
+        );
+        brandPayoutService.reverse(orderId).catch((err) =>
+          logger.error("Brand payout reversal failed on refund webhook", { orderId, err })
         );
 
-        logger.info("Payment refunded via webhook", { razorpayOrderId, eventId, orderId: (orderRow as any).id });
+        logger.info("Payment refunded via webhook", { razorpayOrderId, eventId, orderId });
       }
     }
   }

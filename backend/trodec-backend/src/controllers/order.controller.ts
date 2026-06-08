@@ -15,7 +15,7 @@ class OrderController {
   ) {
     try {
       const userId = req.user!.id;
-      const { shippingAddressId, billingAddressId, notes, items, sourcePostId } = req.body;
+      const { shippingAddressId, billingAddressId, notes, items, sourcePostId, promoCode } = req.body;
 
       const order = await orderService.createOrderFromCart({
         userId,
@@ -24,6 +24,7 @@ class OrderController {
         notes,
         items,
         sourcePostId,
+        promoCode,
       });
 
       sendSuccess(res, order, 201, "Order created successfully");
@@ -172,11 +173,11 @@ class OrderController {
     try {
       const userId = req.user!.id;
       const id = req.params.id as string;
-      const { status, notes } = req.body;
+      const { notes } = req.body;
 
       const order = await orderService.updateOrder(
         id,
-        { status, notes },
+        { notes },
         userId,
       );
 
@@ -212,7 +213,7 @@ class OrderController {
 
   /**
    * POST /orders/validate-promo
-   * Validate a promo code and return discount info.
+   * Validate a promo code against the DB and return discount info.
    */
   async validatePromo(
     req: AuthenticatedRequest,
@@ -223,16 +224,57 @@ class OrderController {
       const { code } = req.body as { code?: string };
       if (!code) throw ApiError.badRequest("Promo code is required");
 
-      const PROMO_CODES: Record<string, { discountPct: number; label: string }> = {
-        TRODEC10: { discountPct: 10, label: "10% off your order" },
-        TRODEC20: { discountPct: 20, label: "20% off your order" },
-        WELCOME:  { discountPct: 5,  label: "5% welcome discount" },
-      };
+      const { supabaseAdmin } = await import("@/config/supabase");
+      const userId = req.user!.id;
 
-      const promo = PROMO_CODES[code.trim().toUpperCase()];
+      const { data: promo } = await supabaseAdmin
+        .from("promo_codes")
+        .select("id, code, discount_pct, max_uses, used_count, min_order_amount, expires_at")
+        .eq("code", code.trim().toUpperCase())
+        .eq("is_active", true)
+        .maybeSingle();
+
       if (!promo) throw ApiError.badRequest("Invalid or expired promo code");
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+        throw ApiError.badRequest("This promo code has expired");
+      }
+      if ((promo as any).max_uses !== null && (promo as any).used_count >= (promo as any).max_uses) {
+        throw ApiError.badRequest("This promo code has reached its usage limit");
+      }
 
-      sendSuccess(res, { code: code.trim().toUpperCase(), ...promo }, 200, "Promo code valid");
+      const { data: alreadyUsed } = await supabaseAdmin
+        .from("promo_code_usages")
+        .select("id")
+        .eq("promo_code_id", (promo as any).id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (alreadyUsed) throw ApiError.badRequest("You have already used this promo code");
+
+      sendSuccess(res, {
+        code: (promo as any).code,
+        discountPct: Number((promo as any).discount_pct),
+        minOrderAmount: Number((promo as any).min_order_amount),
+        label: `${(promo as any).discount_pct}% off your order`,
+      }, 200, "Promo code valid");
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /orders/:id/confirm-receipt
+   * Consumer confirms they received their order → marks delivered, triggers payouts.
+   */
+  async confirmReceipt(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = req.user!.id;
+      const id = req.params.id as string;
+      const order = await orderService.confirmReceipt(id, userId);
+      sendSuccess(res, order, 200, "Order marked as delivered. Thank you!");
     } catch (error) {
       next(error);
     }
