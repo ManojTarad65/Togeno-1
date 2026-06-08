@@ -12,8 +12,8 @@ import { notificationService } from "./notification.service";
 // Valid order status transitions — terminal states (delivered, cancelled) have no outbound edges
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending:    ["confirmed", "cancelled"],
-  confirmed:  ["processing", "shipped", "cancelled"],
-  processing: ["shipped", "cancelled"],
+  confirmed:  ["processing", "shipped", "delivered", "cancelled"],
+  processing: ["shipped", "delivered", "cancelled"],
   shipped:    ["delivered", "cancelled"],
   delivered:  [],
   cancelled:  [],
