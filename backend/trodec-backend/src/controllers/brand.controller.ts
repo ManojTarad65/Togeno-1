@@ -246,23 +246,33 @@ class BrandController {
       const orderIds = (data ?? []).map((item: any) => item.order_id).filter(Boolean);
 
       // Batch-fetch shipments for all returned orders in a single query
-      let shipmentMap: Record<string, { awb_code: string | null; label_url: string | null; carrier: string | null; status: string | null }> = {};
+      let shipmentMap: Record<string, {
+        id: string;
+        awb_code: string | null;
+        label_url: string | null;
+        invoice_url: string | null;
+        carrier: string | null;
+        status: string | null;
+        shiprocket_shipment_id: string | null;
+      }> = {};
       if (orderIds.length > 0) {
         const { data: shipmentRows } = await supabaseAdmin
           .from('shipments')
-          .select('order_id, awb_code, label_url, carrier, status')
+          .select('id, order_id, awb_code, label_url, invoice_url, carrier, status, shiprocket_shipment_id')
           .in('order_id', orderIds)
           .eq('type', 'FORWARD')
           .order('created_at', { ascending: false });
 
         for (const s of shipmentRows ?? []) {
-          // Keep the latest shipment per order (results ordered newest-first, first write wins)
           if (shipmentMap[s.order_id]) continue;
           shipmentMap[s.order_id] = {
+            id: s.id,
             awb_code: s.awb_code,
             label_url: s.label_url,
+            invoice_url: s.invoice_url ?? null,
             carrier: s.carrier,
             status: s.status,
+            shiprocket_shipment_id: s.shiprocket_shipment_id ?? null,
           };
         }
       }
@@ -282,10 +292,13 @@ class BrandController {
           quantity: item.quantity,
           subtotal: item.subtotal,
           selectedSize: item.selected_size ?? null,
+          shipmentId: shipment?.id ?? null,
           awbCode: shipment?.awb_code ?? null,
           labelUrl: shipment?.label_url ?? null,
+          invoiceUrl: shipment?.invoice_url ?? null,
           courierName: shipment?.carrier ?? null,
           shipmentStatus: shipment?.status ?? null,
+          hasShiprocketShipment: Boolean(shipment?.shiprocket_shipment_id),
         };
       }) || [];
 

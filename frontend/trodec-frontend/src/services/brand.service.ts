@@ -65,10 +65,13 @@ export interface BrandOrder {
   quantity?: number;
   subtotal?: number;
   selectedSize?: string | null;
+  shipmentId?: string | null;
   awbCode?: string | null;
   labelUrl?: string | null;
+  invoiceUrl?: string | null;
   courierName?: string | null;
   shipmentStatus?: string | null;
+  hasShiprocketShipment?: boolean;
 }
 
 // ============================================

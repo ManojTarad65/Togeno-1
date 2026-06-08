@@ -31,7 +31,10 @@ import {
   Package,
   ExternalLink,
   XCircle,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
+import { refreshShipmentLabel } from "@/services/shipment.service";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -42,6 +45,7 @@ export default function BrandOrdersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmOrderId, setConfirmOrderId] = useState<string | null>(null);
+  const [retryingLabelId, setRetryingLabelId] = useState<string | null>(null);
 
   const cancellableStatuses = ["pending", "confirmed", "processing"];
 
@@ -58,6 +62,21 @@ export default function BrandOrdersPage() {
       toast.error(err.message || "Failed to cancel order");
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function handleRetryLabel(orderId: string, shipmentId: string) {
+    setRetryingLabelId(orderId);
+    try {
+      const labelUrl = await refreshShipmentLabel(shipmentId);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, labelUrl } : o))
+      );
+      toast.success("Label generated successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Label not ready yet — try again in a few minutes");
+    } finally {
+      setRetryingLabelId(null);
     }
   }
 
@@ -275,9 +294,32 @@ export default function BrandOrdersPage() {
                         Label
                         <ExternalLink className="h-3 w-3 ml-1 opacity-50" />
                       </Button>
+                    ) : order.awbCode && order.shipmentId ? (
+                      // AWB exists but label failed — brand can retry
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={retryingLabelId === order.id}
+                        className="h-7 px-2 border-amber-500/30 bg-transparent text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                        onClick={() => handleRetryLabel(order.id, order.shipmentId!)}
+                        title="Label generation failed — click to retry"
+                      >
+                        {retryingLabelId === order.id
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                          : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                        Retry
+                      </Button>
+                    ) : order.hasShiprocketShipment ? (
+                      // Shipment on Shiprocket but no AWB yet (wallet/KYC issue)
+                      <span className="flex items-center gap-1 text-zinc-600 text-xs" title="AWB not assigned yet — contact admin to retry">
+                        <AlertCircle className="h-3 w-3 text-amber-600" />
+                        Awaiting AWB
+                      </span>
                     ) : (
-                      <span className="text-zinc-600 text-xs">
-                        {order.awbCode ? "Generating..." : "Not ready"}
+                      // No shipment at all
+                      <span className="flex items-center gap-1 text-zinc-600 text-xs" title="Shipment not created yet — contact admin">
+                        <AlertCircle className="h-3 w-3 text-zinc-600" />
+                        Not created
                       </span>
                     )}
                   </TableCell>
