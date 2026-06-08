@@ -227,7 +227,7 @@ class BrandController {
           quantity,
           subtotal,
           selected_size,
-          orders!inner(id, order_number, status, total, created_at)
+          orders!inner(id, order_number, status, total, actual_shipping_cost, created_at)
         `, { count: 'exact' })
         .eq('brand_id', brandId)
         .range(offset, offset + limitNum - 1)
@@ -299,6 +299,7 @@ class BrandController {
           courierName: shipment?.carrier ?? null,
           shipmentStatus: shipment?.status ?? null,
           hasShiprocketShipment: Boolean(shipment?.shiprocket_shipment_id),
+          actualShippingCost: Number((item as any).orders?.actual_shipping_cost ?? 0),
         };
       }) || [];
 

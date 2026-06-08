@@ -75,6 +75,9 @@ export interface AdminOrderRow {
   total: number;
   subtotal: number;
   shipping_amount: number;
+  actual_shipping_cost: number;   // what Trodec pays Shiprocket
+  discount_amount: number;
+  promo_code: string | null;
   tax_amount: number;
   created_at: string;
   profiles: {

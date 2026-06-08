@@ -189,6 +189,7 @@ export default function BrandOrdersPage() {
               <TableHead className="text-zinc-500">Size</TableHead>
               <TableHead className="text-zinc-500">Qty</TableHead>
               <TableHead className="text-zinc-500">Amount</TableHead>
+              <TableHead className="text-zinc-500" title="Actual Shiprocket freight deducted from your payout">Freight</TableHead>
               <TableHead className="text-zinc-500">Order Status</TableHead>
               <TableHead className="text-zinc-500">AWB</TableHead>
               <TableHead className="text-zinc-500">Shipment</TableHead>
@@ -244,6 +245,19 @@ export default function BrandOrdersPage() {
 
                   <TableCell className="text-white font-medium text-sm">
                     ₹{(order.total ?? 0).toFixed(2)}
+                  </TableCell>
+
+                  {/* Actual shipping cost charged by Shiprocket */}
+                  <TableCell>
+                    {(order.actualShippingCost ?? 0) > 0 ? (
+                      <span className="text-orange-400 text-xs font-medium">
+                        −₹{Number(order.actualShippingCost).toFixed(2)}
+                      </span>
+                    ) : order.awbCode ? (
+                      <span className="text-zinc-600 text-xs">Fetching…</span>
+                    ) : (
+                      <span className="text-zinc-700 text-xs">—</span>
+                    )}
                   </TableCell>
 
                   <TableCell>

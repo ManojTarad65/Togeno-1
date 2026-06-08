@@ -83,6 +83,7 @@ export default function AdminOrdersPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Customer</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Total</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden lg:table-cell" title="Actual Shiprocket freight cost (deducted from brand payout)">Freight</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden md:table-cell">Date</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Shipment</th>
               </tr>
@@ -126,6 +127,15 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3 text-right text-white font-medium">
                     ₹{order.total.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 text-right hidden lg:table-cell">
+                    {order.actual_shipping_cost > 0 ? (
+                      <span className="text-xs text-orange-400 font-medium">
+                        ₹{Number(order.actual_shipping_cost).toFixed(2)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-zinc-600">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell text-xs text-zinc-500">
                     {new Date(order.created_at).toLocaleDateString()}

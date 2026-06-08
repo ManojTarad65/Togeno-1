@@ -72,6 +72,7 @@ export interface BrandOrder {
   courierName?: string | null;
   shipmentStatus?: string | null;
   hasShiprocketShipment?: boolean;
+  actualShippingCost?: number;
 }
 
 // ============================================
