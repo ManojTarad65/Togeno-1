@@ -92,6 +92,13 @@ router.delete('/products/:id', adminController.deleteProduct.bind(adminControlle
 router.patch('/orders/:id/status', adminController.updateOrderStatus.bind(adminController));
 
 /**
+ * POST /admin/orders/:id/create-shipment
+ * Manually create a Shiprocket forward shipment for an order whose shipment was
+ * never created (e.g. Shiprocket failed silently at payment confirmation).
+ */
+router.post('/orders/:id/create-shipment', adminController.createShipmentForOrder.bind(adminController));
+
+/**
  * GET /admin/pitches
  * List all pitches with brand/expert/product info.
  */

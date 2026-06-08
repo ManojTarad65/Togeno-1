@@ -256,6 +256,14 @@ export async function adminDeleteProduct(productId: string): Promise<void> {
   }
 }
 
+export async function adminCreateShipmentForOrder(orderId: string): Promise<void> {
+  try {
+    await api.post(`/admin/orders/${orderId}/create-shipment`);
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
 export async function adminUpdateOrderStatus(orderId: string, status: string): Promise<void> {
   try {
     await api.patch(`/admin/orders/${orderId}/status`, { status });

@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ShoppingBag, Loader2 } from "lucide-react";
+import { ShoppingBag, Loader2, Truck } from "lucide-react";
 import { toast } from "sonner";
-import { getAdminOrders, AdminOrderRow, PaginatedResult, adminUpdateOrderStatus } from "@/services/admin.service";
+import { getAdminOrders, AdminOrderRow, PaginatedResult, adminUpdateOrderStatus, adminCreateShipmentForOrder } from "@/services/admin.service";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-500/10 text-amber-400",
@@ -19,6 +19,7 @@ export default function AdminOrdersPage() {
   const [data, setData] = useState<PaginatedResult<AdminOrderRow> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
+  const [creatingShipmentId, setCreatingShipmentId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -83,6 +84,7 @@ export default function AdminOrdersPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Total</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider hidden md:table-cell">Date</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Shipment</th>
               </tr>
             </thead>
             <tbody>
@@ -92,7 +94,7 @@ export default function AdminOrdersPage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: i * 0.02 }}
-                  className="border-b border-[#1a1a1a] bg-[#111111] hover:bg-white/[0.02] transition"
+                  className="border-b border-[#1a1a1a] bg-[#111111] hover:bg-white/2 transition"
                 >
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs text-zinc-300">#{order.order_number}</span>
@@ -127,6 +129,31 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell text-xs text-zinc-500">
                     {new Date(order.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    {["confirmed","processing","shipped","delivered"].includes(order.status) && (
+                      <button
+                        disabled={creatingShipmentId === order.id}
+                        title="Manually create Shiprocket shipment (use when shipment was never created)"
+                        onClick={async () => {
+                          setCreatingShipmentId(order.id);
+                          try {
+                            await adminCreateShipmentForOrder(order.id);
+                            toast.success("Shipment created — check Shipments page for label/AWB");
+                          } catch (e: any) {
+                            toast.error(e.message || "Failed to create shipment");
+                          } finally {
+                            setCreatingShipmentId(null);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors disabled:opacity-40"
+                      >
+                        {creatingShipmentId === order.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Truck className="w-3.5 h-3.5" />}
+                        Create
+                      </button>
+                    )}
                   </td>
                 </motion.tr>
               ))}

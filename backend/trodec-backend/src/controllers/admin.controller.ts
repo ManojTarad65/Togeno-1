@@ -2,9 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { adminService } from '../services/admin.service';
 import { userService } from '../services/user.service';
 import { orderService } from '../services/order.service';
+import { logisticsService, shiprocketClient } from '../services/logistics.service';
 import { notificationService } from '../services/notification.service';
+import { supabaseAdmin } from '../config/supabase';
 import { ApiError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
+import { logger } from '../utils/logger';
 
 function parseIntParam(value: string | string[] | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -212,6 +215,97 @@ class AdminController {
         status as 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
       );
       sendSuccess(res, order, 200, `Order status updated to ${status}`);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /admin/orders/:id/create-shipment
+   * Manually trigger Shiprocket forward shipment creation for an order whose
+   * shipment was never created (e.g. Shiprocket failed silently at confirmation).
+   * Safe to call even if order is already delivered.
+   */
+  async createShipmentForOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orderId = String(req.params['id']);
+
+      // Check no FORWARD shipment already exists
+      const { data: existing } = await supabaseAdmin
+        .from('shipments')
+        .select('id, awb_code')
+        .eq('order_id', orderId)
+        .eq('type', 'FORWARD')
+        .maybeSingle();
+
+      if (existing && (existing as any).awb_code) {
+        throw ApiError.badRequest('A shipment with an AWB already exists for this order. Use Retry AWB/Docs from the Shipments page instead.');
+      }
+
+      // Fetch the order
+      const { data: orderRow, error: orderErr } = await supabaseAdmin
+        .from('orders')
+        .select('*, order_items(brand_id, product_name, product_price, quantity)')
+        .eq('id', orderId)
+        .single();
+
+      if (orderErr || !orderRow) throw ApiError.notFound('Order not found');
+
+      const toAddress = {
+        name:       (orderRow as any).shipping_name,
+        phone:      (orderRow as any).shipping_phone,
+        line1:      (orderRow as any).shipping_address_line1,
+        city:       (orderRow as any).shipping_city,
+        state:      (orderRow as any).shipping_state,
+        postalCode: (orderRow as any).shipping_postal_code,
+        country:    (orderRow as any).shipping_country,
+      };
+
+      const items = ((orderRow as any).order_items ?? []).map((i: any) => ({
+        name:          i.product_name,
+        sku:           'SKU-001',
+        units:         i.quantity,
+        selling_price: i.product_price,
+      }));
+
+      const brandId = ((orderRow as any).order_items?.[0] as any)?.brand_id ?? '';
+
+      // Resolve brand pickup location
+      let fromAddress: Record<string, unknown> = { name: 'Trodec Warehouse', city: 'Mumbai', country: 'India' };
+      let pickupLocation = 'Primary';
+      if (brandId) {
+        const { data: addr } = await supabaseAdmin
+          .from('addresses')
+          .select('full_name, phone_number, address_line1, address_line2, city, state, postal_code, country')
+          .eq('user_id', brandId)
+          .eq('is_default_shipping', true)
+          .maybeSingle();
+
+        if (addr) {
+          fromAddress = {
+            name:       (addr as any).full_name,
+            phone:      (addr as any).phone_number,
+            line1:      (addr as any).address_line1,
+            city:       (addr as any).city,
+            state:      (addr as any).state,
+            postalCode: (addr as any).postal_code,
+            country:    (addr as any).country,
+          };
+        }
+        pickupLocation = await shiprocketClient.getBrandPickupLocation(brandId);
+      }
+
+      const shipment = await logisticsService.createForwardShipment({
+        orderId,
+        fromAddress,
+        toAddress,
+        items,
+        totalAmount: Number((orderRow as any).total ?? 0),
+        pickupLocation,
+      });
+
+      logger.info('Admin manually created forward shipment', { orderId, shipmentId: shipment.id });
+      sendSuccess(res, shipment, 201, 'Shipment created successfully');
     } catch (error) {
       next(error);
     }
