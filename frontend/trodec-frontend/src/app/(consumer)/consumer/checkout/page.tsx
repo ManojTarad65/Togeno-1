@@ -89,9 +89,17 @@ function CheckoutContent() {
     country: "IN",
   });
 
-  const FREE_SHIPPING_THRESHOLD = 50;
-  const shippingCost = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : 5.99;
-  const total = subtotal + shippingCost;
+  // Shipping is always free — charged to Trodec, not the customer
+  const shippingCost = 0;
+
+  // Promo code state
+  const [promoInput, setPromoInput]     = useState("");
+  const [promoCode, setPromoCode]       = useState<string | null>(null);
+  const [discountPct, setDiscountPct]   = useState(0);
+  const [promoLoading, setPromoLoading] = useState(false);
+
+  const discountAmount = promoCode ? Math.round((subtotal * discountPct) / 100 * 100) / 100 : 0;
+  const total = subtotal - discountAmount;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -124,6 +132,30 @@ function CheckoutContent() {
     loadRazorpayScript();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartLoading]);
+
+  async function applyPromo() {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+    setPromoLoading(true);
+    try {
+      const result = await OrderService.validatePromo(code);
+      setPromoCode(result.code);
+      setDiscountPct(result.discountPct);
+      toast.success(`${result.label} applied!`);
+    } catch (e: any) {
+      toast.error(e.message || "Invalid promo code");
+      setPromoCode(null);
+      setDiscountPct(0);
+    } finally {
+      setPromoLoading(false);
+    }
+  }
+
+  function removePromo() {
+    setPromoCode(null);
+    setDiscountPct(0);
+    setPromoInput("");
+  }
 
   async function loadAddresses() {
     try {
@@ -187,6 +219,7 @@ function CheckoutContent() {
           billingAddressId: selectedAddress,
           items: items.map((i) => ({ productId: i.id, quantity: i.quantity, selectedSize: i.selectedSize ?? null })),
           sourcePostId: sourcePostId ?? null,
+          promoCode: promoCode ?? null,
         });
         pendingOrderRef.current = { id: order.id, orderNumber: order.orderNumber ?? order.id.slice(0, 8) };
       }
@@ -547,12 +580,37 @@ function CheckoutContent() {
                </div>
                <div className="flex justify-between text-gray-400 items-center font-medium">
                  <span>Shipping</span>
-                 {shippingCost === 0 ? (
-                   <span className="text-emerald-400 text-[10px] uppercase font-bold tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Free</span>
-                 ) : (
-                   <span className="text-white">₹{shippingCost.toFixed(2)}</span>
-                 )}
+                 <span className="text-emerald-400 text-[10px] uppercase font-bold tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Free</span>
                </div>
+
+               {/* Promo code */}
+               {!promoCode ? (
+                 <div className="flex gap-2 pt-1">
+                   <input
+                     value={promoInput}
+                     onChange={(e) => setPromoInput(e.target.value)}
+                     onKeyDown={(e) => e.key === "Enter" && applyPromo()}
+                     placeholder="Promo code"
+                     className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white/30"
+                   />
+                   <button
+                     onClick={applyPromo}
+                     disabled={promoLoading || !promoInput.trim()}
+                     className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-40"
+                   >
+                     {promoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Apply"}
+                   </button>
+                 </div>
+               ) : (
+                 <div className="flex justify-between items-center text-gray-400 font-medium">
+                   <span className="flex items-center gap-1.5">
+                     Discount
+                     <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">{promoCode}</span>
+                     <button onClick={removePromo} className="text-zinc-600 hover:text-zinc-400 text-xs ml-1">✕</button>
+                   </span>
+                   <span className="text-emerald-400">−₹{discountAmount.toFixed(2)}</span>
+                 </div>
+               )}
                
                <Separator className="bg-white/5 my-5" />
 

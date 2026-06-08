@@ -72,8 +72,8 @@ export interface CreateOrderData {
   billingAddressId: string;
   notes?: string;
   items?: { productId: string; quantity: number; selectedSize?: string | null }[];
-  // If ordering from a post review page, pass the post ID for commission attribution
   sourcePostId?: string | null;
+  promoCode?: string | null;
 }
 
 export interface OrdersFilter {
