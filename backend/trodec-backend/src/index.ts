@@ -1,11 +1,13 @@
 import app from './app';
 import { env } from './config';
 import { logger } from './utils/logger';
+import { startAutomationJobs } from './jobs/automation.job';
 
 const PORT = Number.parseInt(env.PORT, 10);
 
 const server = app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT} [${env.NODE_ENV}]`);
+  startAutomationJobs();
 });
 
 process.on('uncaughtException', (err) => {
