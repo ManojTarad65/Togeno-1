@@ -272,18 +272,6 @@ class OrderService {
       }
 
       attributedExpertId = postRow.expert_id ?? null;
-
-      // Consumer must be a member of the community the post belongs to
-      const { data: membership } = await supabaseAdmin
-        .from("community_members")
-        .select("id")
-        .eq("community_id", postRow.community_id)
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (!membership) {
-        throw ApiError.forbidden("You must join this community before ordering from its reviews");
-      }
     }
 
     // Auto-attribute to expert when no sourcePostId was passed (e.g. checkout from cart or product page).

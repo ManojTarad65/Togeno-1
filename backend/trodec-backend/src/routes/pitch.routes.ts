@@ -3,6 +3,7 @@ import { pitchController } from "@/controllers/pitch.controller";
 import {
   authenticate,
   requireRole,
+  requireVerifiedBrand,
   validateBody,
   validateQuery,
 } from "@/middleware";
@@ -38,7 +39,7 @@ router.get(
 router.post(
   "/",
   authenticate,
-  requireRole("brand_admin"),
+  requireVerifiedBrand,
   validateBody(createPitchSchema),
   pitchController.createPitch
 );

@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { productController } from "@/controllers/product.controller";
 import { uploadController } from "@/controllers/upload.controller";
-import { authenticate, requireRole, validateBody, validateQuery } from "@/middleware";
+import { authenticate, requireRole, requireVerifiedBrand, validateBody, validateQuery } from "@/middleware";
 
 const upload = multer({ storage: multer.memoryStorage() });
 import {
@@ -67,7 +67,7 @@ router.get("/:id/images/list", productController.getProductImages);
 router.post(
   "/",
   authenticate,
-  requireRole("brand_admin"),
+  requireVerifiedBrand,
   validateBody(createProductSchema),
   productController.createProduct
 );
