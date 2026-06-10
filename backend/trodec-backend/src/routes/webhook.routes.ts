@@ -36,15 +36,16 @@ router.post(
 );
 
 /**
- * POST /api/webhook/shiprocket
+ * POST /api/webhook/logistics
  *
  * Public endpoint — NO auth middleware.
  * Shiprocket posts shipment status updates here.
- * Set this in Shiprocket Dashboard → Settings → API → Webhook URL:
- *   https://<ngrok-url>/api/webhook/shiprocket
+ * NOTE: Shiprocket blocks URLs containing "shiprocket", "sr", "kr" — use /logistics instead.
+ * Set this in Shiprocket Dashboard → Settings → Additional Settings → Webhooks:
+ *   https://api.trodec.in/api/webhook/logistics
  *
  * Shiprocket sends JSON body with current_status, awb, order_id, etc.
  */
-router.post("/shiprocket", logisticsController.shiprocketWebhook);
+router.post("/logistics", logisticsController.shiprocketWebhook);
 
 export default router;
