@@ -247,7 +247,7 @@ export const MarketplaceTrendingProducts: FC<MarketplaceTrendingProductsProps> =
                 {/* Price */}
                 <div className="flex items-center justify-between mt-2 mb-3">
                   <div className="text-lg font-black tracking-tight text-white">
-                    ${product.price.toFixed(2)}
+                    ₹{product.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </div>
                 </div>
 

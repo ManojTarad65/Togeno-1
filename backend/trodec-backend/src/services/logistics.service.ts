@@ -1120,7 +1120,8 @@ class LogisticsService {
     const awbCode = trackingId || null;
     const displayTrackingId = trackingId
       || (shiprocketShipmentId ? `SR-${shiprocketShipmentId}` : `SAMPLE-${pitchId.slice(0, 8).toUpperCase()}`);
-    const shipmentStatus: ShipmentStatus = trackingId ? "SHIPPED" : "PENDING";
+    // AWB assigned ≠ shipped — status stays PENDING until the carrier webhook fires
+    const shipmentStatus: ShipmentStatus = "PENDING";
 
     const { data: shipmentRow, error } = await supabaseAdmin
       .from("shipments")
@@ -1136,7 +1137,7 @@ class LogisticsService {
         status: shipmentStatus,
         from_address: fromAddress,
         to_address: toAddress,
-        shipped_at: trackingId ? new Date().toISOString() : null,
+        shipped_at: null,
       })
       .select()
       .single();

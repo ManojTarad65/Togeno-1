@@ -306,7 +306,7 @@ export default function NewPostPage() {
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="font-bold text-white text-sm line-clamp-1">{p.name}</span>
-                                  <span className="text-xs text-emerald-400">${p.price}</span>
+                                  <span className="text-xs text-emerald-400">₹{p.price.toLocaleString("en-IN")}</span>
                                 </div>
                               </div>
                             </SelectItem>

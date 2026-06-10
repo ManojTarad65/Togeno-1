@@ -132,7 +132,7 @@ export default function AdminProductsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right text-white font-medium">
-                    ${product.price.toFixed(2)}
+                    ₹{product.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell text-right">
                     {product.review_count > 0 ? (
