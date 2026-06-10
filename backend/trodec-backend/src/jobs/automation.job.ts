@@ -175,14 +175,14 @@ async function syncActiveTracking(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Job 4: Safety net — detect missed delivery webhooks
+// Job 4: Safety net — detect missed delivery AND cancellation webhooks
 // Runs every 4 hours.
-// Checks PENDING+AWB and SHIPPED shipments (FORWARD + SAMPLE) whose AWB Shiprocket
-// says is delivered, then marks them delivered to trigger the right pipeline:
-//   FORWARD → commission + brand payout
-//   SAMPLE  → pitch status → delivered (expert can publish review)
+// Checks PENDING+AWB and SHIPPED shipments (FORWARD + SAMPLE) and polls
+// Shiprocket for their actual status, then applies any missed transitions:
+//   delivered  → FORWARD: commission + brand payout / SAMPLE: pitch → delivered
+//   cancelled  → FORWARD: order cancelled + refund + stock restore / SAMPLE: pitch → cancelled
 // ---------------------------------------------------------------------------
-async function syncDeliveredOrders(): Promise<void> {
+async function syncShipmentStatuses(): Promise<void> {
   const { data: shipments } = await supabaseAdmin
     .from("shipments")
     .select("id, awb_code, order_id, pitch_id, type")
@@ -198,6 +198,9 @@ async function syncDeliveredOrders(): Promise<void> {
       if (tracking.canonicalStatus === "delivered") {
         await logisticsService.updateShipmentStatus(shipment.id, "DELIVERED");
         logger.info(`[AutoJob] Missed delivery webhook caught for shipment ${shipment.id}`);
+      } else if (tracking.canonicalStatus === "cancelled") {
+        await logisticsService.updateShipmentStatus(shipment.id, "RETURNED");
+        logger.info(`[AutoJob] Missed cancellation webhook caught for shipment ${shipment.id}`);
       }
     } catch {
       // Silent — best-effort
@@ -267,10 +270,10 @@ export function startAutomationJobs(): void {
     );
   });
 
-  // Every 4 hours: safety net for missed delivery webhooks
+  // Every 4 hours: safety net for missed delivery/cancellation webhooks
   cron.schedule("0 */4 * * *", () => {
-    syncDeliveredOrders().catch((err) =>
-      logger.error("[AutoJob] syncDeliveredOrders crashed", { err })
+    syncShipmentStatuses().catch((err) =>
+      logger.error("[AutoJob] syncShipmentStatuses crashed", { err })
     );
   });
 
@@ -281,5 +284,5 @@ export function startAutomationJobs(): void {
     );
   });
 
-  logger.info("✅ Automation jobs started: shipment retry (15m), AWB retry (30m), tracking sync (2h), delivery safety net (4h), payout fix (1h)");
+  logger.info("✅ Automation jobs started: shipment retry (15m), AWB retry (30m), tracking sync (2h), delivery+cancel safety net (4h), payout fix (1h)");
 }
