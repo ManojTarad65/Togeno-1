@@ -150,20 +150,20 @@ async function retryPendingAwb(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Job 3: Sync live tracking for in-transit shipments
 // Runs every 2 hours.
-// Pulls latest events from Shiprocket for all SHIPPED shipments (FORWARD + SAMPLE)
-// so timelines stay up to date even if a webhook was missed.
+// Covers both PENDING+AWB (missed pickup webhook) and SHIPPED (missed transit/delivery
+// webhook) for FORWARD + SAMPLE shipments.
 // ---------------------------------------------------------------------------
 async function syncActiveTracking(): Promise<void> {
   const { data: shipments } = await supabaseAdmin
     .from("shipments")
     .select("id, awb_code")
     .in("type", ["FORWARD", "SAMPLE"])
-    .eq("status", "SHIPPED")
+    .in("status", ["PENDING", "SHIPPED"])
     .not("awb_code", "is", null);
 
   if (!shipments?.length) return;
 
-  logger.info(`[AutoJob] syncActiveTracking: syncing ${shipments.length} in-transit shipments`);
+  logger.info(`[AutoJob] syncActiveTracking: syncing ${shipments.length} shipments`);
 
   for (const shipment of shipments) {
     try {
@@ -177,8 +177,8 @@ async function syncActiveTracking(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Job 4: Safety net — detect missed delivery webhooks
 // Runs every 4 hours.
-// Checks ALL SHIPPED shipments (FORWARD + SAMPLE) whose AWB Shiprocket says
-// is delivered, then marks them delivered to trigger the right pipeline:
+// Checks PENDING+AWB and SHIPPED shipments (FORWARD + SAMPLE) whose AWB Shiprocket
+// says is delivered, then marks them delivered to trigger the right pipeline:
 //   FORWARD → commission + brand payout
 //   SAMPLE  → pitch status → delivered (expert can publish review)
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ async function syncDeliveredOrders(): Promise<void> {
     .from("shipments")
     .select("id, awb_code, order_id, pitch_id, type")
     .in("type", ["FORWARD", "SAMPLE"])
-    .eq("status", "SHIPPED")
+    .in("status", ["PENDING", "SHIPPED"])
     .not("awb_code", "is", null);
 
   if (!shipments?.length) return;
