@@ -31,7 +31,6 @@ import {
   getPitchStatusColor,
   getPitchStatusLabel,
 } from "@/services";
-import { confirmPitchReceipt } from "@/services/pitch.service";
 
 export default function ExpertPitchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,7 +39,6 @@ export default function ExpertPitchDetailPage() {
   const [pitch, setPitch] = useState<PitchWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [responding, setResponding] = useState(false);
-  const [confirmingReceipt, setConfirmingReceipt] = useState(false);
   const [expertResponse, setExpertResponse] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
@@ -416,40 +414,6 @@ export default function ExpertPitchDetailPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-white leading-relaxed">{pitch.expertResponse}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ─── Confirm Receipt (only if shipped) ─── */}
-      {pitch.status === "shipped" && (
-        <Card className="bg-[#0b0b0b] border border-amber-500/20">
-          <CardContent className="pt-5">
-            <div className="flex items-start gap-3">
-              <Package className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="text-white font-semibold text-sm mb-1">Product shipped to your warehouse</p>
-                <p className="text-zinc-400 text-xs mb-4">Once you receive the product, confirm receipt to unlock the ability to publish a review post in your community.</p>
-                <Button
-                  onClick={async () => {
-                    setConfirmingReceipt(true);
-                    try {
-                      const updated = await confirmPitchReceipt(id);
-                      setPitch((prev) => prev ? { ...prev, status: updated.status } : prev);
-                      toast.success("Receipt confirmed! You can now publish your review.");
-                    } catch (err: any) {
-                      toast.error(err.message ?? "Failed to confirm receipt");
-                    } finally {
-                      setConfirmingReceipt(false);
-                    }
-                  }}
-                  disabled={confirmingReceipt}
-                  className="bg-amber-500 hover:bg-amber-400 text-black font-semibold"
-                >
-                  {confirmingReceipt ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
-                  Confirm Product Received
-                </Button>
-              </div>
-            </div>
           </CardContent>
         </Card>
       )}
