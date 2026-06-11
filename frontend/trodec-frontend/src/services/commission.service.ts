@@ -19,6 +19,8 @@ export interface ExpertStats {
   pendingPayout: number;
   inWithdrawal: number;
   paidOut: number;
+  totalOrders: number;
+  avgPerOrder: number;
 }
 
 export interface PlatformStats {
