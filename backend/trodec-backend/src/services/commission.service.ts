@@ -65,6 +65,7 @@ export interface Commission {
   // Enriched fields — populated in expert-facing queries
   orderNumber?: string | null;
   productName?: string | null;
+  communityName?: string | null;
 }
 
 function toCommission(row: CommissionRow): Commission {
@@ -207,7 +208,7 @@ class CommissionService {
 
     let query = supabaseAdmin
       .from("commissions")
-      .select("*, orders(order_number, order_items(product_name))", { count: "exact" })
+      .select("*, orders(order_number, source_post_id, order_items(product_name))", { count: "exact" })
       .eq("expert_id", expertId)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -228,10 +229,11 @@ class CommissionService {
       .eq("expert_id", expertId)
       .neq("status", "reversed");
 
-    const stats: ExpertStats = { totalEarned: 0, pendingPayout: 0, inWithdrawal: 0, paidOut: 0 };
+    const stats: ExpertStats = { totalEarned: 0, pendingPayout: 0, inWithdrawal: 0, paidOut: 0, totalOrders: 0, avgPerOrder: 0 };
     for (const row of allRows ?? []) {
       const payout = Number((row as any).expert_payout ?? 0);
       stats.totalEarned += payout;
+      stats.totalOrders += 1;
       if ((row as any).status === "pending") stats.pendingPayout += payout;
       if ((row as any).status === "reserved") stats.inWithdrawal += payout;
       if ((row as any).status === "paid") stats.paidOut += payout;
@@ -240,16 +242,37 @@ class CommissionService {
     stats.pendingPayout = round2(stats.pendingPayout);
     stats.inWithdrawal = round2(stats.inWithdrawal);
     stats.paidOut = round2(stats.paidOut);
+    stats.avgPerOrder = stats.totalOrders > 0 ? round2(stats.totalEarned / stats.totalOrders) : 0;
+
+    // Batch-fetch community names for orders that came from a post
+    const sourcePostIds: string[] = (data ?? [])
+      .map((r: any) => r.orders?.source_post_id)
+      .filter(Boolean);
+
+    const communityMap: Record<string, string> = {};
+    if (sourcePostIds.length > 0) {
+      const { data: postRows } = await supabaseAdmin
+        .from("posts")
+        .select("id, community_id, communities(name)")
+        .in("id", sourcePostIds);
+
+      for (const p of postRows ?? []) {
+        const name = (p as any).communities?.name ?? null;
+        if (name) communityMap[(p as any).id] = name;
+      }
+    }
 
     return {
       data: (data ?? []).map((r) => {
         const base = toCommission(r as CommissionRow);
         const order = (r as any).orders;
         const items: any[] = order?.order_items ?? [];
+        const sourcePostId: string | null = order?.source_post_id ?? null;
         return {
           ...base,
           orderNumber: order?.order_number ?? null,
           productName: items[0]?.product_name ?? null,
+          communityName: sourcePostId ? (communityMap[sourcePostId] ?? null) : null,
         };
       }),
       pagination: { page, limit, total: count ?? 0 },
@@ -593,6 +616,8 @@ export interface ExpertStats {
   pendingPayout: number;
   inWithdrawal: number;
   paidOut: number;
+  totalOrders: number;
+  avgPerOrder: number;
 }
 
 export interface PlatformStats {

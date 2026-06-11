@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, TrendingUp, Clock, CheckCircle, Banknote, Plus, ArrowDownToLine, Hourglass } from "lucide-react";
+import { Loader2, TrendingUp, Clock, CheckCircle, Banknote, Plus, ArrowDownToLine, Hourglass, ShoppingBag, BarChart3, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   getMyCommissions, getMyStats, getBankAccounts, saveBankAccount,
@@ -115,49 +115,59 @@ export default function ExpertEarningsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-              <TrendingUp className="h-5 w-5 text-emerald-500" />
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">Total Earned</p>
-              <p className="text-2xl font-bold">₹{stats?.totalEarned.toFixed(2) ?? "0.00"}</p>
-            </div>
+            <p className="text-xs text-zinc-500">Total Earned</p>
+            <p className="text-xl font-bold">₹{stats?.totalEarned.toFixed(2) ?? "0.00"}</p>
           </CardContent>
         </Card>
         <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-yellow-500" />
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+              <Clock className="h-4 w-4 text-yellow-500" />
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">Available to Withdraw</p>
-              <p className="text-2xl font-bold">₹{stats?.pendingPayout.toFixed(2) ?? "0.00"}</p>
-            </div>
+            <p className="text-xs text-zinc-500">Available</p>
+            <p className="text-xl font-bold">₹{stats?.pendingPayout.toFixed(2) ?? "0.00"}</p>
           </CardContent>
         </Card>
         <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-              <Hourglass className="h-5 w-5 text-blue-500" />
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+              <Hourglass className="h-4 w-4 text-blue-500" />
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">In Withdrawal</p>
-              <p className="text-2xl font-bold">₹{stats?.inWithdrawal.toFixed(2) ?? "0.00"}</p>
-            </div>
+            <p className="text-xs text-zinc-500">In Withdrawal</p>
+            <p className="text-xl font-bold">₹{stats?.inWithdrawal.toFixed(2) ?? "0.00"}</p>
           </CardContent>
         </Card>
         <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-              <CheckCircle className="h-5 w-5 text-purple-500" />
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+              <CheckCircle className="h-4 w-4 text-purple-500" />
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">Paid Out</p>
-              <p className="text-2xl font-bold">₹{stats?.paidOut.toFixed(2) ?? "0.00"}</p>
+            <p className="text-xs text-zinc-500">Paid Out</p>
+            <p className="text-xl font-bold">₹{stats?.paidOut.toFixed(2) ?? "0.00"}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+              <ShoppingBag className="h-4 w-4 text-orange-500" />
             </div>
+            <p className="text-xs text-zinc-500">Total Orders</p>
+            <p className="text-xl font-bold">{stats?.totalOrders ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-[#0b0b0b] border-[#1a1a1a]">
+          <CardContent className="p-5 flex flex-col gap-2">
+            <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center">
+              <BarChart3 className="h-4 w-4 text-pink-500" />
+            </div>
+            <p className="text-xs text-zinc-500">Avg / Order</p>
+            <p className="text-xl font-bold">₹{stats?.avgPerOrder.toFixed(2) ?? "0.00"}</p>
           </CardContent>
         </Card>
       </div>
@@ -176,12 +186,12 @@ export default function ExpertEarningsPage() {
       {activeTab === "earnings" && (
         <div className="space-y-4">
           {/* Withdraw CTA */}
-          {(stats?.pendingPayout ?? 0) >= 100 && (
+          {(stats?.pendingPayout ?? 0) >= 500 && (
             <Card className="bg-emerald-500/5 border-emerald-500/20">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-emerald-400">₹{stats?.pendingPayout.toFixed(2)} available for withdrawal</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">Minimum withdrawal: ₹100</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Minimum withdrawal: ₹500</p>
                 </div>
                 <Button onClick={() => { setWithdrawAmount(String(stats?.pendingPayout ?? "")); setActiveTab("withdrawals"); }} className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2">
                   <ArrowDownToLine className="w-4 h-4" /> Withdraw
@@ -201,22 +211,42 @@ export default function ExpertEarningsPage() {
             <div className="space-y-3">
               {commissions.map(c => (
                 <Card key={c.id} className="bg-[#0b0b0b] border-[#1a1a1a]">
-                  <CardContent className="p-4 flex items-center justify-between flex-wrap gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {(c as any).productName ?? `Order #${((c as any).orderNumber ?? c.orderId.slice(0, 8)).toUpperCase()}`}
-                      </p>
-                      <p className="text-xs text-zinc-500 mt-0.5">
-                        {(c as any).orderNumber ? `Order #${(c as any).orderNumber} · ` : ""}
-                        Order total: ₹{Number(c.orderAmount).toFixed(2)} · {new Date(c.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-emerald-400">+₹{Number(c.expertPayout).toFixed(2)}</p>
-                        <p className="text-xs text-zinc-500">your cut</p>
+                  <CardContent className="p-4 space-y-3">
+                    {/* Top row: product + badge */}
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          {(c as any).productName ?? `Order #${((c as any).orderNumber ?? c.orderId.slice(0, 8)).toUpperCase()}`}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          {(c as any).orderNumber && (
+                            <span className="text-xs text-zinc-500">#{(c as any).orderNumber}</span>
+                          )}
+                          {(c as any).communityName && (
+                            <span className="flex items-center gap-1 text-xs text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
+                              <Users className="w-2.5 h-2.5" />{(c as any).communityName}
+                            </span>
+                          )}
+                          <span className="text-xs text-zinc-600">{new Date(c.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+                        </div>
                       </div>
-                      <Badge variant="outline" className={`capitalize ${statusColor[c.status]}`}>{c.status === "reserved" ? "in withdrawal" : c.status}</Badge>
+                      <Badge variant="outline" className={`capitalize shrink-0 ${statusColor[c.status]}`}>{c.status === "reserved" ? "in withdrawal" : c.status}</Badge>
+                    </div>
+
+                    {/* Commission breakdown */}
+                    <div className="grid grid-cols-3 gap-2 bg-white/2 border border-white/5 rounded-lg p-3">
+                      <div className="text-center">
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">Order Total</p>
+                        <p className="text-sm font-semibold text-zinc-300">₹{Number(c.orderAmount).toFixed(2)}</p>
+                      </div>
+                      <div className="text-center border-x border-white/5">
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">Platform Take</p>
+                        <p className="text-sm font-semibold text-zinc-400">₹{Number(c.platformMargin).toFixed(2)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">Your Cut</p>
+                        <p className="text-sm font-bold text-emerald-400">+₹{Number(c.expertPayout).toFixed(2)}</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -258,12 +288,12 @@ export default function ExpertEarningsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Amount (₹)</Label>
-                    <Input type="number" min={100} max={stats?.pendingPayout ?? 0} placeholder="Min ₹100"
+                    <Input type="number" min={500} max={stats?.pendingPayout ?? 0} placeholder="Min ₹500"
                       value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)}
                       className="bg-[#111] border-zinc-700 text-white" />
-                    <p className="text-xs text-zinc-500">Available: ₹{stats?.pendingPayout.toFixed(2) ?? "0.00"} · Actual payout rounds up to cover whole commissions</p>
+                    <p className="text-xs text-zinc-500">Available: ₹{stats?.pendingPayout.toFixed(2) ?? "0.00"} · Minimum ₹500 · Actual payout rounds up to cover whole commissions</p>
                   </div>
-                  <Button type="submit" disabled={requesting || !withdrawAmount || Number(withdrawAmount) < 100}
+                  <Button type="submit" disabled={requesting || !withdrawAmount || Number(withdrawAmount) < 500}
                     className="bg-white text-black hover:bg-zinc-200 w-full">
                     {requesting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit Request"}
                   </Button>
