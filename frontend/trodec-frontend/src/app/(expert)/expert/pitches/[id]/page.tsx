@@ -21,16 +21,26 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Truck,
+  MapPin,
+  RefreshCw,
 } from "lucide-react";
 import { ProductAttributesCard } from "@/components/product/ProductAttributesCard";
 import { toast } from "sonner";
 import {
   getPitch,
   respondToPitch,
+  confirmPitchReceipt,
   PitchWithDetails,
   getPitchStatusColor,
   getPitchStatusLabel,
 } from "@/services";
+import {
+  getPitchShipment,
+  getShipmentStatusColor,
+  getShipmentStatusLabel,
+  PitchShipment,
+} from "@/services/shipment.service";
 
 export default function ExpertPitchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,9 +49,13 @@ export default function ExpertPitchDetailPage() {
   const [pitch, setPitch] = useState<PitchWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [responding, setResponding] = useState(false);
+  const [confirmingReceipt, setConfirmingReceipt] = useState(false);
   const [expertResponse, setExpertResponse] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedImageIdx, setSelectedImageIdx] = useState(0);
+  const [shipment, setShipment] = useState<PitchShipment | null>(null);
+  const [shipmentLoading, setShipmentLoading] = useState(false);
+  const [shipmentError, setShipmentError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPitch();
@@ -52,11 +66,41 @@ export default function ExpertPitchDetailPage() {
       setIsLoading(true);
       const data = await getPitch(id);
       setPitch(data);
+      const shipmentStatuses = ["accepted", "shipped", "delivered", "posted", "completed"];
+      if (shipmentStatuses.includes(data.status)) {
+        loadShipment();
+      }
     } catch (error: any) {
       toast.error("Failed to load pitch");
       router.push("/expert/pitches");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function loadShipment() {
+    setShipmentLoading(true);
+    setShipmentError(null);
+    try {
+      const data = await getPitchShipment(id);
+      setShipment(data);
+    } catch (err: any) {
+      setShipmentError(err.message ?? "Shipment not available yet");
+    } finally {
+      setShipmentLoading(false);
+    }
+  }
+
+  async function handleConfirmReceipt() {
+    try {
+      setConfirmingReceipt(true);
+      await confirmPitchReceipt(id);
+      toast.success("Receipt confirmed!");
+      loadPitch();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to confirm receipt");
+    } finally {
+      setConfirmingReceipt(false);
     }
   }
 
@@ -418,6 +462,150 @@ export default function ExpertPitchDetailPage() {
         </Card>
       )}
 
+      {/* ─── Sample Shipment Tracking ─── */}
+      {["accepted", "shipped", "delivered", "posted", "completed"].includes(pitch.status) && (
+        <Card className="bg-[#0b0b0b] border border-[#1f1f1f]">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Truck className="h-4 w-4 text-emerald-500" />
+              <CardTitle className="text-sm text-zinc-400 font-medium">Sample Shipment</CardTitle>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadShipment}
+              disabled={shipmentLoading}
+              className="h-7 w-7 p-0 text-zinc-500 hover:text-white"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${shipmentLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {shipmentLoading ? (
+              <div className="flex items-center gap-2 text-zinc-500 py-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Loading shipment...</span>
+              </div>
+            ) : shipmentError ? (
+              <p className="text-sm text-zinc-500">{shipmentError}</p>
+            ) : shipment ? (
+              <div className="space-y-4">
+                {/* Status + carrier */}
+                <div className="flex items-center justify-between">
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${getShipmentStatusColor(shipment.status)}`}
+                  >
+                    {getShipmentStatusLabel(shipment.status)}
+                  </Badge>
+                  <span className="text-xs text-zinc-500">{shipment.carrier}</span>
+                </div>
+
+                {/* Progress stepper */}
+                {(() => {
+                  const steps: { key: string; label: string }[] = [
+                    { key: "PENDING", label: "Preparing" },
+                    { key: "SHIPPED", label: "Shipped" },
+                    { key: "OUT_FOR_DELIVERY", label: "Out for Delivery" },
+                    { key: "DELIVERED", label: "Delivered" },
+                  ];
+                  const order = ["PENDING", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"];
+                  const activeIdx = order.indexOf(shipment.status);
+                  return (
+                    <div className="flex items-center gap-0">
+                      {steps.map((step, idx) => {
+                        const done = idx <= activeIdx;
+                        const isLast = idx === steps.length - 1;
+                        return (
+                          <div key={step.key} className="flex items-center flex-1 min-w-0">
+                            <div className="flex flex-col items-center gap-1">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${done ? "bg-emerald-500 border-emerald-500" : "bg-transparent border-zinc-700"}`}>
+                                {done && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
+                              </div>
+                              <span className={`text-[10px] leading-tight text-center whitespace-nowrap ${done ? "text-emerald-400" : "text-zinc-600"}`}>
+                                {step.label}
+                              </span>
+                            </div>
+                            {!isLast && (
+                              <div className={`flex-1 h-px mx-1 mb-4 ${idx < activeIdx ? "bg-emerald-500" : "bg-zinc-800"}`} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Key details */}
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Tracking ID</span>
+                    <span className="text-white font-mono text-xs select-all">
+                      {shipment.awbCode ?? shipment.trackingId}
+                    </span>
+                  </div>
+                  {shipment.shippedAt && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Shipped</span>
+                      <span className="text-white">
+                        {new Date(shipment.shippedAt).toLocaleDateString(undefined, {
+                          year: "numeric", month: "short", day: "numeric",
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  {shipment.deliveredAt && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Delivered</span>
+                      <span className="text-emerald-400">
+                        {new Date(shipment.deliveredAt).toLocaleDateString(undefined, {
+                          year: "numeric", month: "short", day: "numeric",
+                        })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Live tracking location */}
+                {shipment.liveTracking && (
+                  <div className="border-t border-white/5 pt-3 space-y-1">
+                    {shipment.liveTracking.currentLocation && (
+                      <div className="flex items-center gap-2 text-sm text-zinc-400">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        <span>{shipment.liveTracking.currentLocation}</span>
+                      </div>
+                    )}
+                    {shipment.liveTracking.lastUpdated && (
+                      <p className="text-xs text-zinc-600 pl-5">
+                        Updated {shipment.liveTracking.lastUpdated}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Confirm Receipt CTA */}
+                {pitch.status === "shipped" && (
+                  <div className="border-t border-white/5 pt-3">
+                    <Button
+                      onClick={handleConfirmReceipt}
+                      disabled={confirmingReceipt}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 font-semibold"
+                    >
+                      {confirmingReceipt ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4 mr-2" />
+                      )}
+                      Confirm Receipt
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ─── Publish Review (only if delivered) ─── */}
       {pitch.status === "delivered" && (
         <Card className="bg-[#0b0b0b] border border-emerald-500/20">
@@ -479,7 +667,7 @@ export default function ExpertPitchDetailPage() {
               placeholder="Optional: add a message with your response..."
               value={expertResponse}
               onChange={(e) => setExpertResponse(e.target.value)}
-              className="bg-[#111111] border border-[#1f1f1f] text-white min-h-[80px]"
+              className="bg-[#111111] border border-[#1f1f1f] text-white min-h-20"
             />
             <div className="flex gap-3">
               <Button
