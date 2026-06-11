@@ -188,12 +188,20 @@ class BrandController {
       if (productIds.length > 0) {
         const { data: orderItems } = await supabaseAdmin
           .from('order_items')
-          .select('order_id, quantity, product_price, subtotal')
+          .select('order_id')
           .in('product_id', productIds);
 
         totalOrders = new Set(orderItems?.map(i => i.order_id)).size;
-        totalRevenue = orderItems?.reduce((sum, item) => sum + (item.subtotal || 0), 0) || 0;
       }
+
+      // Net profit = sum of brand_net from delivered orders (after shipping + platform commission)
+      const { data: payoutRows } = await supabaseAdmin
+        .from('brand_payouts')
+        .select('brand_net')
+        .eq('brand_id', brandId)
+        .neq('status', 'reversed');
+
+      totalRevenue = payoutRows?.reduce((sum, row) => sum + Number(row.brand_net || 0), 0) || 0;
 
       sendSuccess(res, { totalProducts, activeProducts, totalOrders, totalRevenue });
     } catch (error) {

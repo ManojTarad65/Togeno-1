@@ -80,9 +80,10 @@ export default function BrandDashboardPage() {
 
   const metrics = [
     {
-      label: "Total Revenue",
+      label: "Net Profit",
       value: `₹${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-      icon: DollarSign,
+      subtext: "After shipping & commission",
+      icon: TrendingUp,
       accent: "from-emerald-500/10 to-transparent",
       iconColor: "text-emerald-500",
       borderHover: "hover:border-emerald-500/20",
@@ -106,10 +107,10 @@ export default function BrandDashboardPage() {
       borderHover: "hover:border-violet-500/20",
     },
     {
-      label: "Avg. Order Value",
+      label: "Avg. Net / Order",
       value: totalOrders > 0 ? `₹${(totalRevenue / totalOrders).toFixed(2)}` : "₹0.00",
       subtext: "Lifetime",
-      icon: TrendingUp,
+      icon: DollarSign,
       accent: "from-amber-500/10 to-transparent",
       iconColor: "text-amber-500",
       borderHover: "hover:border-amber-500/20",
@@ -431,7 +432,7 @@ export default function BrandDashboardPage() {
         <div className="px-6 py-4 border-b border-[#1a1a1a] flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium text-white">Performance Overview</h3>
-            <p className="text-[11px] text-zinc-600 mt-0.5">Revenue and order volume over time</p>
+            <p className="text-[11px] text-zinc-600 mt-0.5">Net profit and order volume over time</p>
           </div>
           <span className="text-[11px] text-zinc-600 border border-[#222] rounded-md px-2.5 py-1">
             Coming soon
