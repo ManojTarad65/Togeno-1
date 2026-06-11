@@ -109,11 +109,14 @@ export default function BrandLayout({
   );
   const isOnboardingPage = pathname === "/brand/onboarding";
 
-  /* Onboarding check */
+  /* Onboarding check — also fires when brandDetails is null (no row created yet) */
   useEffect(() => {
-    if (!isChecking && isAuthenticated && brandDetails) {
-      if (!onboardingComplete && !isOnboardingPage) router.push("/brand/onboarding");
-      else if (onboardingComplete && isOnboardingPage) router.push("/brand/dashboard");
+    if (!isChecking && isAuthenticated) {
+      if ((!brandDetails || !onboardingComplete) && !isOnboardingPage) {
+        router.push("/brand/onboarding");
+      } else if (brandDetails && onboardingComplete && isOnboardingPage) {
+        router.push("/brand/dashboard");
+      }
     }
   }, [isChecking, isAuthenticated, brandDetails, onboardingComplete, isOnboardingPage, router]);
 

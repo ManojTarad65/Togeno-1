@@ -168,8 +168,8 @@ export default function ExpertLayout({
     );
   }
 
-  /* Unverified expert gate */
-  if (expertDetails && !expertDetails.isVerified) {
+  /* Unverified expert gate — also fires when expertDetails is null (no row yet) */
+  if (!expertDetails || !expertDetails.isVerified) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center px-4">
         <div className="max-w-md w-full text-center space-y-5">

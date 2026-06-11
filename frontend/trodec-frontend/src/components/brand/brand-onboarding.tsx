@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { updateBrandDetails } from "@/services/brand.service";
+import { createBrandDetails, updateBrandDetails } from "@/services/brand.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,12 +24,13 @@ const CATEGORIES = [
 
 export function BrandOnboarding() {
     const router = useRouter();
-    const { fetchCurrentUser } = useAuthStore();
+    const { fetchCurrentUser, brandDetails, profile } = useAuthStore();
 
     const [loading, setLoading] = useState(false);
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
     const [formData, setFormData] = useState({
+        brandName: "",
         description: "",
         targetAudience: "",
         websiteUrl: "",
@@ -62,6 +63,12 @@ export function BrandOnboarding() {
 
         if (loading) return;
 
+        const resolvedBrandName = formData.brandName.trim() || profile?.fullName?.trim() || "";
+        if (!resolvedBrandName || resolvedBrandName.length < 2) {
+            toast.error("Please enter your brand name (at least 2 characters).");
+            return;
+        }
+
         if (selectedCategories.length === 0) {
             toast.error("Please select at least one brand category.");
             return;
@@ -89,11 +96,17 @@ export function BrandOnboarding() {
                 ? `${formData.description.trim()}\n\nTarget Audience: ${formData.targetAudience.trim()}`
                 : formData.description.trim();
 
-            await updateBrandDetails({
+            const payload = {
                 businessType: selectedCategories.join(", "),
                 description: combinedDescription,
                 websiteUrl,
-            });
+            };
+
+            if (brandDetails) {
+                await updateBrandDetails(payload);
+            } else {
+                await createBrandDetails({ brandName: resolvedBrandName, ...payload });
+            }
 
             await fetchCurrentUser();
 
@@ -118,6 +131,20 @@ export function BrandOnboarding() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-8">
+
+                    {/* Brand Name */}
+                    <div className="space-y-3">
+                        <label className="text-sm font-medium text-zinc-300">
+                            Brand Name <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                            name="brandName"
+                            placeholder={profile?.fullName ?? "Your brand name"}
+                            value={formData.brandName}
+                            onChange={handleChange}
+                            className="bg-[#111] border-[#1f1f1f] focus:border-purple-500"
+                        />
+                    </div>
 
                     {/* Categories */}
                     <div className="space-y-3">

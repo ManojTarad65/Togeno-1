@@ -60,6 +60,9 @@ export async function authenticate(
     }
 
     if (profileRow) {
+      if (!profileRow.is_active) {
+        throw ApiError.unauthorized('Your account has been deactivated. Please contact support.');
+      }
       req.profile = toProfile(profileRow as ProfileRow);
     }
 

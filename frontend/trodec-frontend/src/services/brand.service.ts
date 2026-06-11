@@ -34,6 +34,14 @@ export interface BrandStats {
   totalRevenue: number;
 }
 
+export interface CreateBrandInput {
+  brandName: string;
+  businessType?: string | null;
+  websiteUrl?: string | null;
+  description?: string | null;
+  logoUrl?: string | null;
+}
+
 export interface UpdateBrandInput {
   brandName?: string;
   businessType?: string | null;
@@ -78,6 +86,18 @@ export interface BrandOrder {
 // ============================================
 // API Functions
 // ============================================
+
+/**
+ * Create brand details (first-time onboarding)
+ */
+export async function createBrandDetails(data: CreateBrandInput): Promise<BrandDetails> {
+  try {
+    const response = await api.post<ApiSuccessResponse<BrandDetails>>('/brands/me', data);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
 
 /**
  * Get current brand details

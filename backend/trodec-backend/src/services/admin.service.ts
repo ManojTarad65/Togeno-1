@@ -41,34 +41,46 @@ export interface AdminStats {
 class AdminService {
   async approveUser(userId: string, role: 'expert' | 'brand_admin'): Promise<void> {
     const table = role === 'expert' ? 'expert_details' : 'brand_details';
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from(table)
       .update({
         is_verified: true,
         verification_date: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
 
     if (error) {
       logger.error(`Failed to approve ${role}`, { error: error.message, userId });
       throw ApiError.internal(`Failed to approve ${role}`);
     }
+
+    if (!data || data.length === 0) {
+      logger.error(`No ${role} details row found to approve`, { userId });
+      throw ApiError.notFound(`${role === 'expert' ? 'Expert' : 'Brand'} details not found. The user may not have completed registration.`);
+    }
   }
 
   async rejectUser(userId: string, role: 'expert' | 'brand_admin'): Promise<void> {
     const table = role === 'expert' ? 'expert_details' : 'brand_details';
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from(table)
       .update({
         is_verified: false,
         updated_at: new Date().toISOString()
       })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
 
     if (error) {
       logger.error(`Failed to reject ${role}`, { error: error.message, userId });
       throw ApiError.internal(`Failed to reject ${role}`);
+    }
+
+    if (!data || data.length === 0) {
+      logger.error(`No ${role} details row found to reject`, { userId });
+      throw ApiError.notFound(`${role === 'expert' ? 'Expert' : 'Brand'} details not found. The user may not have completed registration.`);
     }
   }
 
