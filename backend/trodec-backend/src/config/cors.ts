@@ -3,7 +3,7 @@ import { env } from './env';
 
 // Build allowed origins from CORS_ORIGIN env var (comma-separated list).
 // Example value in Hostinger backend env vars:
-//   CORS_ORIGIN=https://trodec.com,https://www.trodec.com,https://trodec.vercel.app
+//   CORS_ORIGIN=https://trodec.com
 const allowedOrigins = new Set(
   env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
 );
@@ -22,10 +22,8 @@ export const corsOptions: CorsOptions = {
       return;
     }
 
-    // Allow any *.trodec.com or *.trodec.in subdomain automatically
-    // so you never have to update this list when adding subdomains
-    if (origin.endsWith('.trodec.com') || origin === 'https://trodec.com' ||
-        origin.endsWith('.trodec.in')  || origin === 'https://trodec.in') {
+    // Allow trodec.com and any *.trodec.com subdomain
+    if (origin.endsWith('.trodec.com') || origin === 'https://trodec.com') {
       callback(null, true);
       return;
     }
