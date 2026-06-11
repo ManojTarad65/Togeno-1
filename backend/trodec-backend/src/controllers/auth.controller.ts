@@ -67,6 +67,10 @@ class AuthController {
       // Fetch user profile
       const profile = await userService.getProfile(authResult.user.id);
 
+      if (profile && !profile.isActive) {
+        throw ApiError.unauthorized('Your account has been deactivated. Please contact support.');
+      }
+
       sendSuccess(
         res,
         {
@@ -145,6 +149,12 @@ class AuthController {
       }
 
       const result = await authService.refreshToken(refreshToken);
+
+      const profile = await userService.getProfile(result.user.id);
+      if (profile && !profile.isActive) {
+        throw ApiError.unauthorized('Your account has been deactivated. Please contact support.');
+      }
+
       sendSuccess(res, result, 200, "Token refreshed successfully");
     } catch (error) {
       next(error);
@@ -173,6 +183,10 @@ class AuthController {
 
       // Check if profile exists
       let profile = await userService.getProfile(user.id);
+
+      if (profile && !profile.isActive) {
+        throw ApiError.unauthorized('Your account has been deactivated. Please contact support.');
+      }
 
       // Only used when creating a brand-new profile. For an existing user we
       // keep the role already stored in `profiles` — never silently switch it
