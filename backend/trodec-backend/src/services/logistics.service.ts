@@ -1236,15 +1236,11 @@ class LogisticsService {
 
     let labelUrl: string | null = null;
 
-    // Attempt 1: generate/label with Shiprocket ORDER ID
-    if (row.shiprocket_order_id) {
-      labelUrl = await shiprocketClient.generateLabel(row.shiprocket_order_id);
-    }
-    // Attempt 2: generate/label with shipment ID
-    if (!labelUrl && row.shiprocket_shipment_id) {
+    // Attempt 1: generate label using Shiprocket shipment ID (correct ID for this endpoint)
+    if (row.shiprocket_shipment_id) {
       labelUrl = await shiprocketClient.generateLabel(row.shiprocket_shipment_id);
     }
-    // Attempt 3: order details endpoint
+    // Attempt 2: fall back to order details endpoint
     if (!labelUrl && row.shiprocket_order_id) {
       labelUrl = await shiprocketClient.getLabelFromOrderDetails(row.shiprocket_order_id);
     }

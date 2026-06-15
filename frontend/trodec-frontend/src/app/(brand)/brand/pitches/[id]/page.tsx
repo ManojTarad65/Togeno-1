@@ -63,6 +63,7 @@ export default function BrandPitchDetailPage() {
       if (
         data.status === "accepted" ||
         data.status === "shipped" ||
+        data.status === "delivered" ||
         data.status === "posted" ||
         data.status === "completed"
       ) {
@@ -450,7 +451,7 @@ export default function BrandPitchDetailPage() {
                       </Button>
                     </div>
                   )}
-                  {!shipment.labelUrl && shipment.awbCode && (
+                  {!shipment.labelUrl && (
                     <div className="flex justify-between items-center">
                       <span className="text-zinc-500">Shipping Label</span>
                       <Button
