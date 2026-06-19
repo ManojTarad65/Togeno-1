@@ -273,7 +273,7 @@ class ShiprocketClient {
       billing_pincode: to.postalCode,
       billing_state: to.state,
       billing_country: to.country || "India",
-      billing_email: "",
+      billing_email: "orders@trodec.in",
       billing_phone: sanitizedPhone,
       shipping_is_billing: true,
       order_items: items.map((i) => ({

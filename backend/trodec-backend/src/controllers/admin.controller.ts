@@ -3,6 +3,7 @@ import { adminService } from '../services/admin.service';
 import { userService } from '../services/user.service';
 import { orderService } from '../services/order.service';
 import { logisticsService, shiprocketClient } from '../services/logistics.service';
+import { brandService } from '../services/brand.service';
 import { notificationService } from '../services/notification.service';
 import { supabaseAdmin } from '../config/supabase';
 import { ApiError } from '../utils/errors';
@@ -238,8 +239,11 @@ class AdminController {
         .eq('type', 'FORWARD')
         .maybeSingle();
 
-      if (existing && (existing as any).awb_code) {
-        throw ApiError.badRequest('A shipment with an AWB already exists for this order. Use Retry AWB/Docs from the Shipments page instead.');
+      if (existing) {
+        if ((existing as any).awb_code) {
+          throw ApiError.badRequest('A shipment with an AWB already exists for this order. Use Retry AWB/Docs from the Shipments page instead.');
+        }
+        throw ApiError.badRequest('A shipment already exists for this order (no AWB yet — Shiprocket may have failed). Use "Retry AWB" from the Shipments page to assign an AWB and regenerate documents.');
       }
 
       // Fetch the order
@@ -292,6 +296,7 @@ class AdminController {
             country:    (addr as any).country,
           };
         }
+        await brandService.syncPickupLocation(brandId).catch(() => {});
         pickupLocation = await shiprocketClient.getBrandPickupLocation(brandId);
       }
 

@@ -2,6 +2,7 @@ import { supabaseAdmin } from "../config";
 import { ApiError } from "../utils";
 import { logger } from "../utils/logger";
 import { logisticsService, shiprocketClient } from "./logistics.service";
+import { brandService } from "./brand.service";
 
 // Pitch status type
 export type PitchStatus =
@@ -603,6 +604,7 @@ class PitchService {
             }
           : { address: updatedPitch.shippingAddress ?? "Expert address on file" };
 
+        await brandService.syncPickupLocation(updatedPitch.brandId).catch(() => {});
         const pickupLocation = await shiprocketClient.getBrandPickupLocation(updatedPitch.brandId);
 
         logger.info("Sample shipment data", {
