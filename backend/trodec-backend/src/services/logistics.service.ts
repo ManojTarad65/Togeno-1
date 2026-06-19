@@ -1279,8 +1279,13 @@ class LogisticsService {
           .eq("id", row.pitch_id)
           .single();
 
-        const pickupLocation = (pitchData as any)?.brand_id
-          ? await shiprocketClient.getBrandPickupLocation((pitchData as any).brand_id as string).catch(() => "Primary")
+        const brandId = (pitchData as any)?.brand_id as string | undefined;
+        if (brandId) {
+          const { brandService } = await import("./brand.service");
+          await brandService.syncPickupLocation(brandId).catch(() => {});
+        }
+        const pickupLocation = brandId
+          ? await shiprocketClient.getBrandPickupLocation(brandId).catch(() => "Primary")
           : "Primary";
 
         const result = await shiprocketClient.createForwardOrder({
