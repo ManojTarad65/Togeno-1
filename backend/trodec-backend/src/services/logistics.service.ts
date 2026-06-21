@@ -156,6 +156,8 @@ class ShiprocketClient {
   private token: string | null = null;
   private tokenExpiry: number = 0;
   private tokenRefreshPromise: Promise<string> | null = null;
+  private loginFailedAt: number = 0;
+  private static readonly LOGIN_COOLDOWN_MS = 60_000;
 
   private async getToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.token && Date.now() < this.tokenExpiry) {
@@ -181,6 +183,16 @@ class ShiprocketClient {
   }
 
   private async _doLogin(): Promise<string> {
+    const cooldownRemaining = this.loginFailedAt + ShiprocketClient.LOGIN_COOLDOWN_MS - Date.now();
+    if (cooldownRemaining > 0) {
+      logger.warn("Shiprocket login suppressed — cooldown active after recent failure", {
+        retryInSeconds: Math.ceil(cooldownRemaining / 1000),
+      });
+      throw ApiError.internal(`Shiprocket login suppressed (cooldown ${Math.ceil(cooldownRemaining / 1000)}s remaining) — too many recent failures`);
+    }
+
+    logger.info("Shiprocket login attempt", { email: env.SHIPROCKET_EMAIL });
+
     const res = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -193,13 +205,15 @@ class ShiprocketClient {
     const json = (await res.json()) as { token?: string; message?: string };
 
     if (!res.ok || !json.token) {
-      logger.error("Shiprocket auth failed", { message: json.message });
+      this.loginFailedAt = Date.now();
+      logger.error("Shiprocket auth failed — cooldown started", { status: res.status, message: json.message });
       throw ApiError.internal("Shiprocket authentication failed");
     }
 
+    this.loginFailedAt = 0;
     this.token = json.token;
     this.tokenExpiry = Date.now() + TOKEN_TTL_MS;
-    logger.info("Shiprocket token refreshed");
+    logger.info("Shiprocket token refreshed successfully");
     return this.token;
   }
 
