@@ -12,6 +12,8 @@ import {
   Search,
   ExternalLink,
   MapPin,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,8 +23,10 @@ import {
   adminVerifyUser,
   getAdminShiprocketLocations,
   assignBrandPickupLocation,
+  getShiprocketStatus,
   AdminUserRow,
   ShiprocketLocation,
+  ShiprocketStatus,
   PaginatedResult,
 } from "@/services/admin.service";
 
@@ -41,6 +45,8 @@ export default function AdminBrandsPage() {
   const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Record<string, string>>({});
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [srStatus, setSrStatus] = useState<ShiprocketStatus | null>(null);
+  const [srStatusLoading, setSrStatusLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -74,7 +80,20 @@ export default function AdminBrandsPage() {
     getAdminShiprocketLocations()
       .then((locs) => { setShiprocketLocations(locs); setLocationsLoaded(true); })
       .catch(() => { setLocationsLoaded(true); });
+    loadShiprocketStatus();
   }, []);
+
+  async function loadShiprocketStatus() {
+    setSrStatusLoading(true);
+    try {
+      const s = await getShiprocketStatus();
+      setSrStatus(s);
+    } catch {
+      setSrStatus(null);
+    } finally {
+      setSrStatusLoading(false);
+    }
+  }
 
   async function handleVerify(userId: string, approved: boolean) {
     setActionLoading(userId);
@@ -143,6 +162,51 @@ export default function AdminBrandsPage() {
         <p className="text-sm text-zinc-400 mt-1">
           Manage brand accounts, approvals, and Shiprocket pickup locations
         </p>
+      </div>
+
+      {/* Shiprocket Status Banner */}
+      <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border text-sm ${
+        srStatusLoading
+          ? "border-zinc-700 bg-zinc-900/50 text-zinc-500"
+          : srStatus?.shiprocketConnected
+          ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400"
+          : "border-red-500/20 bg-red-500/5 text-red-400"
+      }`}>
+        {srStatusLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin shrink-0 mt-0.5" />
+        ) : srStatus?.shiprocketConnected ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+        ) : (
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        )}
+        <div className="flex-1 min-w-0">
+          {srStatusLoading ? (
+            <span>Checking Shiprocket connection…</span>
+          ) : srStatus?.shiprocketConnected ? (
+            <span>Shiprocket connected — orders will be placed successfully.</span>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-medium">Shiprocket not connected — orders cannot be placed.</p>
+              {srStatus?.tokenError && (
+                <p className="text-xs text-red-300/70 wrap-break-word">{srStatus.tokenError}</p>
+              )}
+              {srStatus && !srStatus.appSettingsTableExists && (
+                <p className="text-xs text-red-300/70">Migration <code>025_app_settings.sql</code> has not been run — run it in Supabase SQL editor.</p>
+              )}
+              {srStatus?.appSettingsTableExists && !srStatus.tokenCachedInDb && (
+                <p className="text-xs text-red-300/70">No token cached in DB — a fresh Shiprocket login will be attempted on next request.</p>
+              )}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={loadShiprocketStatus}
+          disabled={srStatusLoading}
+          className="shrink-0 text-zinc-500 hover:text-zinc-300 transition"
+          title="Refresh status"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${srStatusLoading ? "animate-spin" : ""}`} />
+        </button>
       </div>
 
       {/* Tabs + Search */}

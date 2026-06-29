@@ -43,6 +43,12 @@ router.post('/users/:id/verify', adminController.verifyUser.bind(adminController
 router.get('/shiprocket/pickup-locations', adminController.getShiprocketPickupLocations.bind(adminController));
 
 /**
+ * GET /admin/shiprocket/status
+ * Diagnose Shiprocket connectivity — token state, cooldown, DB cache.
+ */
+router.get('/shiprocket/status', adminController.getShiprocketStatus.bind(adminController));
+
+/**
  * GET /admin/brands
  * List all brands
  */

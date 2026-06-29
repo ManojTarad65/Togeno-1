@@ -385,6 +385,22 @@ export async function uploadShipmentLabel(shipmentId: string, file: File): Promi
   }
 }
 
+export interface ShiprocketStatus {
+  shiprocketConnected: boolean;
+  tokenError: string | null;
+  appSettingsTableExists: boolean;
+  tokenCachedInDb: boolean;
+}
+
+export async function getShiprocketStatus(): Promise<ShiprocketStatus> {
+  try {
+    const res = await api.get<ApiSuccessResponse<ShiprocketStatus>>('/admin/shiprocket/status');
+    return res.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
 export async function getAdminShiprocketLocations(): Promise<ShiprocketLocation[]> {
   try {
     const res = await api.get<ApiSuccessResponse<ShiprocketLocation[]>>('/admin/shiprocket/pickup-locations');

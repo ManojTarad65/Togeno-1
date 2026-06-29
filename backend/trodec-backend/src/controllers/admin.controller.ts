@@ -445,6 +445,45 @@ class AdminController {
   }
 
   /**
+   * GET /admin/shiprocket/status
+   * Diagnose Shiprocket connectivity — shows token state, cooldown, and pickup locations.
+   */
+  async getShiprocketStatus(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Try to get a token (will use persisted one if valid)
+      let tokenOk = false;
+      let tokenError: string | null = null;
+      try {
+        await shiprocketClient.getPickupLocations(); // lightweight call to verify auth
+        tokenOk = true;
+      } catch (err: any) {
+        tokenError = err?.message ?? String(err);
+      }
+
+      // Check app_settings table exists
+      let appSettingsOk = false;
+      let tokenCachedInDb = false;
+      try {
+        await supabaseAdmin.from('app_settings').select('key').limit(1);
+        appSettingsOk = true;
+        const { data: tokenRow } = await supabaseAdmin.from('app_settings').select('value').eq('key', 'shiprocket_token').maybeSingle();
+        tokenCachedInDb = !!(tokenRow as any)?.value;
+      } catch {
+        appSettingsOk = false;
+      }
+
+      sendSuccess(res, {
+        shiprocketConnected: tokenOk,
+        tokenError,
+        appSettingsTableExists: appSettingsOk,
+        tokenCachedInDb,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /admin/brands/:id/assign-pickup-location
    * Assign a Shiprocket pickup location name to a brand.
    * Body: { pickupLocation: string }
