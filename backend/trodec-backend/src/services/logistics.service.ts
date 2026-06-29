@@ -1149,32 +1149,53 @@ class LogisticsService {
     let carrier = "Shiprocket";
     let labelUrl: string | null = null;
 
-    try {
-      const from = fromAddress as unknown as ShiprocketAddress;
-      const to   = toAddress   as unknown as ShiprocketAddress;
+    const orderArgs = {
+      internalOrderId: `SMP-${pitchId.replace(/-/g, "").slice(0, 16)}`,
+      orderDate: new Date().toISOString().split("T")[0],
+      from: fromAddress as unknown as ShiprocketAddress,
+      to:   toAddress   as unknown as ShiprocketAddress,
+      items: [{ name: "Product Sample", sku: "SAMPLE-001", units: 1, selling_price: 1 }],
+      totalAmount: 1,
+    };
 
-      const result = await shiprocketClient.createForwardOrder({
-        internalOrderId: `SMP-${pitchId.replace(/-/g, "").slice(0, 16)}`,
-        orderDate: new Date().toISOString().split("T")[0],
-        from,
-        to,
-        items: [{ name: "Product Sample", sku: "SAMPLE-001", units: 1, selling_price: 1 }],
-        totalAmount: 1,
-        pickupLocation,
-      });
-
+    const applyResult = (result: Awaited<ReturnType<typeof shiprocketClient.createForwardOrder>>) => {
       shiprocketOrderId    = result.shiprocketOrderId;
       shiprocketShipmentId = result.shiprocketShipmentId;
       trackingId           = result.trackingId;
       carrier              = result.courier;
+    };
 
-      if (shiprocketShipmentId && trackingId) {
-        labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId);
-      }
-
+    try {
+      applyResult(await shiprocketClient.createForwardOrder({ ...orderArgs, pickupLocation }));
       logger.info("Shiprocket sample order created", { pitchId, shiprocketOrderId, awb: trackingId || "pending" });
-    } catch (err) {
-      logger.error("Shiprocket createSampleShipment failed, using fallback", { pitchId, err });
+    } catch (firstErr: any) {
+      const errMsg = String(firstErr?.message ?? "").toLowerCase();
+      const isPickupError = errMsg.includes("pickup") || errMsg.includes("unregistered") || errMsg.includes("location") || !shiprocketOrderId;
+
+      if (isPickupError) {
+        // First attempt failed — likely the brand's pickup location isn't active yet.
+        // Fetch all registered Shiprocket pickup locations and retry with the first active one.
+        logger.warn("Sample order failed, retrying with first available Shiprocket pickup location", { pitchId, triedLocation: pickupLocation, err: errMsg });
+        try {
+          const locations = await shiprocketClient.getPickupLocations();
+          const active = locations.find((l) => l.status === 1) ?? locations[0];
+          if (active) {
+            logger.info("Retrying sample order with fallback pickup location", { pitchId, fallback: active.name });
+            applyResult(await shiprocketClient.createForwardOrder({ ...orderArgs, pickupLocation: active.name }));
+            logger.info("Shiprocket sample order created (fallback pickup)", { pitchId, shiprocketOrderId, pickup: active.name });
+          } else {
+            logger.error("No active Shiprocket pickup locations found — sample order cannot be placed", { pitchId });
+          }
+        } catch (retryErr: any) {
+          logger.error("Shiprocket sample order retry also failed", { pitchId, retryErr: retryErr?.message ?? retryErr });
+        }
+      } else {
+        logger.error("Shiprocket createSampleShipment failed", { pitchId, err: firstErr?.message ?? firstErr });
+      }
+    }
+
+    if (shiprocketShipmentId && trackingId) {
+      labelUrl = await shiprocketClient.generateLabel(shiprocketShipmentId).catch(() => null);
     }
 
     const awbCode = trackingId || null;
