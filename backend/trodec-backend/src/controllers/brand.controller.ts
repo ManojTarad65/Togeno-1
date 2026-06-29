@@ -346,6 +346,20 @@ class BrandController {
     }
   }
 
+  /**
+   * POST /brands/me/sync-pickup
+   * Re-registers the brand's default shipping address on Shiprocket and returns updated settings.
+   */
+  async syncPickupLocation(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      await brandService.syncPickupLocation(req.user!.id);
+      const result = await brandService.getPickupSettings(req.user!.id);
+      sendSuccess(res, result, 200, "Pickup location synced");
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ============================================================
   // EARNINGS / PAYOUTS
   // ============================================================

@@ -37,6 +37,12 @@ router.patch('/users/:id/active', adminController.toggleUserActive.bind(adminCon
 router.post('/users/:id/verify', adminController.verifyUser.bind(adminController));
 
 /**
+ * GET /admin/shiprocket/pickup-locations
+ * List all pickup locations registered on Shiprocket.
+ */
+router.get('/shiprocket/pickup-locations', adminController.getShiprocketPickupLocations.bind(adminController));
+
+/**
  * GET /admin/brands
  * List all brands
  */
@@ -47,6 +53,12 @@ router.get('/brands', adminController.listAllBrands.bind(adminController));
  * List brands pending approval
  */
 router.get('/brands/pending', adminController.listPendingBrands.bind(adminController));
+
+/**
+ * POST /admin/brands/:id/assign-pickup-location
+ * Assign a Shiprocket pickup location to a brand.
+ */
+router.post('/brands/:id/assign-pickup-location', adminController.assignBrandPickupLocation.bind(adminController));
 
 /**
  * GET /admin/experts

@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/stores/auth.store";
-import api from "@/services/api";
-import { createAddress, updateAddress, setDefaultShipping } from "@/services/address.service";
-import { updateBrandDetails } from "@/services/brand.service";
+import { updateBrandDetails, getPickupSettings, ShiprocketPickupSettings } from "@/services/brand.service";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,10 +15,9 @@ import {
   User,
   Shield,
   Camera,
-  Mail,
-  Building,
   Save,
   Receipt,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -29,7 +26,6 @@ export default function BrandProfilePage() {
   const { user, profile, brandDetails, fetchCurrentUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
-  const [warehouse, setWarehouse] = useState<any>(null);
 
   const [gstForm, setGstForm] = useState({
     gstNumber: "",
@@ -42,46 +38,10 @@ export default function BrandProfilePage() {
     panNumber: "",
   });
   const [isSavingGst, setIsSavingGst] = useState(false);
-
-  const [warehouseForm, setWarehouseForm] = useState({
-    fullName: "",
-    phoneNumber: "",
-    addressLine1: "",
-    addressLine2: "",
-    landmark: "",
-    city: "",
-    state: "",
-    postalCode: "",
-    country: "India",
-  });
-  const [isDefaultPickup, setIsDefaultPickup] = useState(true);
-  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false);
+  const [pickupSync, setPickupSync] = useState<ShiprocketPickupSettings | null>(null);
 
   useEffect(() => {
-    async function fetchWarehouse() {
-      try {
-        const response = await api.get('/brands/me/pickup-settings');
-        const addr = response.data.data.pickupAddress;
-        setWarehouse(addr);
-        if (addr) {
-           setWarehouseForm({
-             fullName: addr.full_name || "",
-             phoneNumber: addr.phone || addr.phone_number || "",
-             addressLine1: addr.address_line1 || "",
-             addressLine2: addr.address_line2 || "",
-             landmark: "", 
-             city: addr.city || "",
-             state: addr.state || "",
-             postalCode: addr.postal_code || "",
-             country: addr.country || "India",
-           });
-           setIsDefaultPickup(addr.is_default_shipping ?? true);
-        }
-      } catch (err) {
-        console.error("Failed to load warehouse address", err);
-      }
-    }
-    fetchWarehouse();
+    getPickupSettings().then(setPickupSync).catch(console.error);
 
     // Pre-fill GST form from brandDetails
     if (brandDetails) {
@@ -105,74 +65,6 @@ export default function BrandProfilePage() {
       setIsLoading(false);
       toast.success("Profile updated successfully");
     }, 1000);
-  };
-
-  const handleWarehouseSave = async () => {
-    if (!warehouseForm.fullName || !warehouseForm.phoneNumber || !warehouseForm.addressLine1 || !warehouseForm.city || !warehouseForm.state || !warehouseForm.postalCode) {
-      toast.error("Please fill all required fields");
-      return;
-    }
-    const phoneRegex = /^\d{10}$/;
-    if (!phoneRegex.test(warehouseForm.phoneNumber)) {
-      toast.error("Phone Number must be exactly 10 digits");
-      return;
-    }
-    const pinRegex = /^\d{6}$/;
-    if (!pinRegex.test(warehouseForm.postalCode)) {
-      toast.error("PIN Code must be exactly 6 digits");
-      return;
-    }
-
-    setIsSavingWarehouse(true);
-    try {
-      const combinedAddressLine2 = warehouseForm.landmark 
-        ? `${warehouseForm.addressLine2} (Landmark: ${warehouseForm.landmark})`.trim() 
-        : warehouseForm.addressLine2;
-
-      const payload = {
-        fullName: warehouseForm.fullName,
-        phoneNumber: warehouseForm.phoneNumber,
-        addressLine1: warehouseForm.addressLine1,
-        addressLine2: combinedAddressLine2,
-        city: warehouseForm.city,
-        state: warehouseForm.state,
-        postalCode: warehouseForm.postalCode,
-        country: warehouseForm.country,
-      };
-
-      let newAddr;
-      if (warehouse && warehouse.id) {
-         newAddr = await updateAddress(warehouse.id, payload);
-      } else {
-         newAddr = await createAddress(payload);
-      }
-      
-      if (isDefaultPickup) {
-         await setDefaultShipping(newAddr.id);
-      }
-
-      setWarehouse({
-        ...warehouse,
-        id: newAddr.id,
-        full_name: newAddr.fullName,
-        phone: newAddr.phoneNumber,
-        phone_number: newAddr.phoneNumber,
-        address_line1: newAddr.addressLine1,
-        address_line2: newAddr.addressLine2,
-        city: newAddr.city,
-        state: newAddr.state,
-        postal_code: newAddr.postalCode,
-        country: newAddr.country,
-        is_default_shipping: isDefaultPickup,
-      });
-
-      toast.success("Warehouse Address saved successfully");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "Failed to save warehouse address");
-    } finally {
-      setIsSavingWarehouse(false);
-    }
   };
 
   const handleGstSave = async () => {
@@ -338,163 +230,33 @@ export default function BrandProfilePage() {
                 </CardFooter>
               </Card>
 
-              {/* Add new Card for Warehouse Address */}
+              {/* Pickup Location — managed by admin */}
               <Card className="bg-[#0b0b0b] border-[#1f1f1f]">
                 <CardHeader className="border-b border-white/5">
-                  <CardTitle className="text-white">
-                    Warehouse Address (Shiprocket Pickup Location)
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-zinc-400" />
+                    Shiprocket Pickup Location
                   </CardTitle>
                   <CardDescription>
-                    Manage your default warehouse location for shipments.
+                    Your pickup address for sample shipments is managed by the Trodec team.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="pt-8">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>Contact Name <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={warehouseForm.fullName}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, fullName: e.target.value })}
-                        placeholder="John Doe"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
+                <CardContent className="pt-6">
+                  {pickupSync === null ? (
+                    <p className="text-sm text-zinc-600">Loading…</p>
+                  ) : pickupSync.shiprocketPickupLocation ? (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-zinc-300">Assigned location:</span>
+                      <span className="text-sm font-mono font-medium text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded">
+                        {pickupSync.shiprocketPickupLocation}
+                      </span>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Phone Number <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={warehouseForm.phoneNumber}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, phoneNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                        placeholder="9876543210"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Address Line 1 <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={warehouseForm.addressLine1}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, addressLine1: e.target.value })}
-                        placeholder="House/Flat No., Building Name, Street"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Address Line 2 (Optional)</Label>
-                      <Input
-                        value={warehouseForm.addressLine2}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, addressLine2: e.target.value })}
-                        placeholder="Area, Sector, Locality"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Landmark (Optional)</Label>
-                      <Input
-                        value={warehouseForm.landmark}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, landmark: e.target.value })}
-                        placeholder="Near Metro Station"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>City <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={warehouseForm.city}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, city: e.target.value })}
-                        placeholder="Mumbai"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>State <span className="text-red-500">*</span></Label>
-                      <select
-                        value={warehouseForm.state}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, state: e.target.value })}
-                        className="flex h-10 w-full rounded-md border border-[#1f1f1f] bg-[#111111] px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                      >
-                        <option value="">Select State</option>
-                        <option value="Andaman and Nicobar Islands">Andaman and Nicobar Islands</option>
-                        <option value="Andhra Pradesh">Andhra Pradesh</option>
-                        <option value="Arunachal Pradesh">Arunachal Pradesh</option>
-                        <option value="Assam">Assam</option>
-                        <option value="Bihar">Bihar</option>
-                        <option value="Chandigarh">Chandigarh</option>
-                        <option value="Chhattisgarh">Chhattisgarh</option>
-                        <option value="Dadra and Nagar Haveli and Daman and Diu">Dadra and Nagar Haveli and Daman and Diu</option>
-                        <option value="Delhi">Delhi</option>
-                        <option value="Goa">Goa</option>
-                        <option value="Gujarat">Gujarat</option>
-                        <option value="Haryana">Haryana</option>
-                        <option value="Himachal Pradesh">Himachal Pradesh</option>
-                        <option value="Jammu & Kashmir">Jammu & Kashmir</option>
-                        <option value="Jharkhand">Jharkhand</option>
-                        <option value="Karnataka">Karnataka</option>
-                        <option value="Kerala">Kerala</option>
-                        <option value="Ladakh">Ladakh</option>
-                        <option value="Lakshadweep">Lakshadweep</option>
-                        <option value="Madhya Pradesh">Madhya Pradesh</option>
-                        <option value="Maharashtra">Maharashtra</option>
-                        <option value="Manipur">Manipur</option>
-                        <option value="Meghalaya">Meghalaya</option>
-                        <option value="Mizoram">Mizoram</option>
-                        <option value="Nagaland">Nagaland</option>
-                        <option value="Odisha">Odisha</option>
-                        <option value="Puducherry">Puducherry</option>
-                        <option value="Punjab">Punjab</option>
-                        <option value="Rajasthan">Rajasthan</option>
-                        <option value="Sikkim">Sikkim</option>
-                        <option value="Tamil Nadu">Tamil Nadu</option>
-                        <option value="Telangana">Telangana</option>
-                        <option value="Tripura">Tripura</option>
-                        <option value="Uttar Pradesh">Uttar Pradesh</option>
-                        <option value="Uttarakhand">Uttarakhand</option>
-                        <option value="West Bengal">West Bengal</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>PIN Code <span className="text-red-500">*</span></Label>
-                      <Input
-                        value={warehouseForm.postalCode}
-                        onChange={(e) => setWarehouseForm({ ...warehouseForm, postalCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                        placeholder="400001"
-                        className="bg-[#111111] border-[#1f1f1f] text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Country</Label>
-                      <Input
-                        value={warehouseForm.country}
-                        disabled
-                        className="bg-[#0e0e0e] border-[#1f1f1f] text-zinc-500"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-6 flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="defaultPickup"
-                      checked={isDefaultPickup}
-                      onChange={(e) => setIsDefaultPickup(e.target.checked)}
-                      className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 border"
-                    />
-                    <label htmlFor="defaultPickup" className="text-sm font-medium leading-none text-zinc-300">
-                      Set as Default Pickup Location
-                    </label>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-amber-400/80">
+                      No pickup location assigned yet. Contact your Trodec account manager to set one up.
+                    </p>
+                  )}
                 </CardContent>
-                <CardFooter className="flex justify-end border-t border-white/5 pt-6">
-                  <Button
-                    onClick={handleWarehouseSave}
-                    disabled={isSavingWarehouse}
-                    className="h-9 text-sm bg-white text-black hover:bg-zinc-200 font-medium"
-                  >
-                    {isSavingWarehouse ? "Saving..." : (
-                      <>
-                        <Save className="mr-2 h-4 w-4" />
-                        Save Warehouse
-                      </>
-                    )}
-                  </Button>
-                </CardFooter>
               </Card>
             </TabsContent>
 

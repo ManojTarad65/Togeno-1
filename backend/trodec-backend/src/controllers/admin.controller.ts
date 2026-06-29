@@ -431,6 +431,37 @@ class AdminController {
   }
 
   /**
+   * GET /admin/shiprocket/pickup-locations
+   * Returns all pickup locations registered on Shiprocket.
+   */
+  async getShiprocketPickupLocations(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const locations = await shiprocketClient.getPickupLocations();
+      sendSuccess(res, locations);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /admin/brands/:id/assign-pickup-location
+   * Assign a Shiprocket pickup location name to a brand.
+   * Body: { pickupLocation: string }
+   */
+  async assignBrandPickupLocation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const brandId = String(req.params['id']);
+      const { pickupLocation } = req.body as { pickupLocation: string };
+      if (!pickupLocation) throw ApiError.badRequest('pickupLocation is required');
+      await brandService.updatePickupSettings(brandId, { shiprocketPickupLocation: pickupLocation });
+      logger.info('Admin assigned pickup location to brand', { brandId, pickupLocation });
+      sendSuccess(res, { brandId, pickupLocation }, 200, 'Pickup location assigned');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /admin/pitches
    * List all pitches with brand/expert/product/community info.
    */

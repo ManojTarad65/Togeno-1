@@ -11,6 +11,7 @@ import {
   Loader2,
   Search,
   ExternalLink,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,10 @@ import {
   getAdminBrands,
   getAdminPendingBrands,
   adminVerifyUser,
+  getAdminShiprocketLocations,
+  assignBrandPickupLocation,
   AdminUserRow,
+  ShiprocketLocation,
   PaginatedResult,
 } from "@/services/admin.service";
 
@@ -33,6 +37,9 @@ export default function AdminBrandsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [shiprocketLocations, setShiprocketLocations] = useState<ShiprocketLocation[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<Record<string, string>>({});
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -46,6 +53,13 @@ export default function AdminBrandsPage() {
         result = await getAdminBrands();
       }
       setData(result);
+      // Pre-fill selected location from current DB value
+      const init: Record<string, string> = {};
+      for (const row of result.data) {
+        const loc = row.brand_details?.shiprocket_pickup_location;
+        if (loc) init[row.id] = loc;
+      }
+      setSelectedLocation((prev) => ({ ...init, ...prev }));
     } catch {
       toast.error("Failed to load brands");
     } finally {
@@ -53,9 +67,13 @@ export default function AdminBrandsPage() {
     }
   }, [tab]);
 
+  useEffect(() => { loadData(); }, [loadData]);
+
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    getAdminShiprocketLocations()
+      .then(setShiprocketLocations)
+      .catch(() => toast.error("Could not load Shiprocket locations"));
+  }, []);
 
   async function handleVerify(userId: string, approved: boolean) {
     setActionLoading(userId);
@@ -69,6 +87,34 @@ export default function AdminBrandsPage() {
       setActionLoading(null);
     }
   }
+
+  async function handleAssignPickup(brandId: string) {
+    const loc = selectedLocation[brandId];
+    if (!loc) { toast.error("Select a pickup location first"); return; }
+    setAssigningId(brandId);
+    try {
+      await assignBrandPickupLocation(brandId, loc);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              data: prev.data.map((r) =>
+                r.id === brandId && r.brand_details
+                  ? { ...r, brand_details: { ...r.brand_details, shiprocket_pickup_location: loc } }
+                  : r
+              ),
+            }
+          : prev
+      );
+      toast.success(`Pickup location assigned: ${loc}`);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to assign pickup location");
+    } finally {
+      setAssigningId(null);
+    }
+  }
+
+  const activeLocations = shiprocketLocations.filter((l) => l.status === 1);
 
   const filtered = (data?.data ?? []).filter((row) => {
     if (!search) return true;
@@ -94,7 +140,7 @@ export default function AdminBrandsPage() {
       <div className="pb-6 border-b border-[#1f1f1f]">
         <h1 className="text-2xl font-semibold tracking-tight">Brands</h1>
         <p className="text-sm text-zinc-400 mt-1">
-          Manage brand accounts and approvals
+          Manage brand accounts, approvals, and Shiprocket pickup locations
         </p>
       </div>
 
@@ -115,14 +161,21 @@ export default function AdminBrandsPage() {
             </button>
           ))}
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search brands..."
-            className="w-full pl-8 pr-3 py-1.5 text-sm bg-[#111111] border border-[#1f1f1f] rounded-md text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
-          />
+        <div className="flex items-center gap-3">
+          {activeLocations.length > 0 && (
+            <span className="text-xs text-zinc-500">
+              {activeLocations.length} active Shiprocket location{activeLocations.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search brands..."
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-[#111111] border border-[#1f1f1f] rounded-md text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            />
+          </div>
         </div>
       </div>
 
@@ -142,6 +195,10 @@ export default function AdminBrandsPage() {
             const bd = row.brand_details;
             const isVerified = bd?.is_verified ?? false;
             const isPending = !isVerified;
+            const currentPickup = bd?.shiprocket_pickup_location ?? null;
+            const pickedValue = selectedLocation[row.id] ?? "";
+            const isAssigning = assigningId === row.id;
+            const isDirty = pickedValue && pickedValue !== currentPickup;
 
             return (
               <motion.div
@@ -149,102 +206,144 @@ export default function AdminBrandsPage() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-lg bg-[#111111] border border-[#1f1f1f] hover:border-zinc-700 transition"
+                className="flex flex-col gap-4 p-4 rounded-lg bg-[#111111] border border-[#1f1f1f] hover:border-zinc-700 transition"
               >
-                {/* Logo / Avatar */}
-                <div className="h-10 w-10 rounded-md bg-white/5 flex items-center justify-center flex-shrink-0">
-                  {bd?.logo_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={bd.logo_url} alt={bd.brand_name} loading="lazy" className="h-10 w-10 rounded-md object-contain p-0.5" />
-                  ) : (
-                    <Building2 className="h-5 w-5 text-zinc-600" />
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-white">
-                      {bd?.brand_name ?? "Unnamed Brand"}
-                    </span>
-                    <span
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                        isVerified
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-amber-500/10 text-amber-400"
-                      }`}
-                    >
-                      {isVerified ? "Verified" : "Pending"}
-                    </span>
-                    {bd?.business_type && (
-                      <span className="text-[10px] text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded-full">
-                        {bd.business_type}
-                      </span>
+                {/* Top row: logo + info + website + verify actions */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  {/* Logo / Avatar */}
+                  <div className="h-10 w-10 rounded-md bg-white/5 flex items-center justify-center shrink-0">
+                    {bd?.logo_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={bd.logo_url} alt={bd.brand_name} loading="lazy" className="h-10 w-10 rounded-md object-contain p-0.5" />
+                    ) : (
+                      <Building2 className="h-5 w-5 text-zinc-600" />
                     )}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    {row.full_name ?? "No name"} · {row.email}
-                  </p>
-                  {bd?.description && (
-                    <p className="text-xs text-zinc-600 mt-1 line-clamp-1">{bd.description}</p>
-                  )}
-                </div>
 
-                {/* Website */}
-                {bd?.website_url && (
-                  <a
-                    href={bd.website_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition flex-shrink-0"
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-
-                {/* Actions */}
-                <div className="flex gap-2 flex-shrink-0">
-                  {isPending ? (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={actionLoading === row.id}
-                        onClick={() => handleVerify(row.id, true)}
-                        className="h-8 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300"
-                        variant="ghost"
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-white">
+                        {bd?.brand_name ?? "Unnamed Brand"}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          isVerified
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : "bg-amber-500/10 text-amber-400"
+                        }`}
                       >
-                        {actionLoading === row.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                            Approve
-                          </>
-                        )}
-                      </Button>
+                        {isVerified ? "Verified" : "Pending"}
+                      </span>
+                      {bd?.business_type && (
+                        <span className="text-[10px] text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded-full">
+                          {bd.business_type}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {row.full_name ?? "No name"} · {row.email}
+                    </p>
+                    {bd?.description && (
+                      <p className="text-xs text-zinc-600 mt-1 line-clamp-1">{bd.description}</p>
+                    )}
+                  </div>
+
+                  {/* Website */}
+                  {bd?.website_url && (
+                    <a
+                      href={bd.website_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition shrink-0"
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+
+                  {/* Verify actions */}
+                  <div className="flex gap-2 shrink-0">
+                    {isPending ? (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={actionLoading === row.id}
+                          onClick={() => handleVerify(row.id, true)}
+                          className="h-8 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300"
+                          variant="ghost"
+                        >
+                          {actionLoading === row.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                              Approve
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={actionLoading === row.id}
+                          onClick={() => handleVerify(row.id, false)}
+                          className="h-8 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300"
+                          variant="ghost"
+                        >
+                          <XCircle className="h-3.5 w-3.5 mr-1" />
+                          Reject
+                        </Button>
+                      </>
+                    ) : (
                       <Button
                         size="sm"
                         disabled={actionLoading === row.id}
                         onClick={() => handleVerify(row.id, false)}
-                        className="h-8 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300"
+                        className="h-8 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
                         variant="ghost"
                       >
                         <XCircle className="h-3.5 w-3.5 mr-1" />
-                        Reject
+                        Revoke
                       </Button>
-                    </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pickup Location row */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-3 border-t border-white/5">
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 shrink-0">
+                    <MapPin className="w-3.5 h-3.5" />
+                    Pickup Location:
+                  </div>
+                  {currentPickup && !isDirty && (
+                    <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-mono shrink-0">
+                      {currentPickup}
+                    </span>
+                  )}
+                  {activeLocations.length === 0 ? (
+                    <span className="text-xs text-zinc-600 italic">No Shiprocket locations available</span>
                   ) : (
-                    <Button
-                      size="sm"
-                      disabled={actionLoading === row.id}
-                      onClick={() => handleVerify(row.id, false)}
-                      className="h-8 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
-                      variant="ghost"
-                    >
-                      <XCircle className="h-3.5 w-3.5 mr-1" />
-                      Revoke
-                    </Button>
+                    <div className="flex items-center gap-2 flex-1">
+                      <select
+                        value={pickedValue}
+                        onChange={(e) => setSelectedLocation((prev) => ({ ...prev, [row.id]: e.target.value }))}
+                        className="flex-1 min-w-0 px-2 py-1 text-xs bg-[#0b0b0b] border border-[#2a2a2a] rounded text-white focus:outline-none focus:border-zinc-600"
+                      >
+                        <option value="">— select location —</option>
+                        {activeLocations.map((l) => (
+                          <option key={l.name} value={l.name}>
+                            {l.name} ({l.city})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleAssignPickup(row.id)}
+                        disabled={!isDirty || isAssigning}
+                        className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                      >
+                        {isAssigning ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        Assign
+                      </button>
+                    </div>
                   )}
                 </div>
               </motion.div>

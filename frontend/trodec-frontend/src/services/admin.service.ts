@@ -64,7 +64,14 @@ export interface AdminUserRow {
     website_url: string | null;
     description: string | null;
     logo_url: string | null;
+    shiprocket_pickup_location: string | null;
   } | null;
+}
+
+export interface ShiprocketLocation {
+  name: string;
+  city: string;
+  status: number;
 }
 
 export interface AdminOrderRow {
@@ -373,6 +380,23 @@ export async function uploadShipmentLabel(shipmentId: string, file: File): Promi
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
     return res.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function getAdminShiprocketLocations(): Promise<ShiprocketLocation[]> {
+  try {
+    const res = await api.get<ApiSuccessResponse<ShiprocketLocation[]>>('/admin/shiprocket/pickup-locations');
+    return res.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function assignBrandPickupLocation(brandId: string, pickupLocation: string): Promise<void> {
+  try {
+    await api.post(`/admin/brands/${brandId}/assign-pickup-location`, { pickupLocation });
   } catch (error) {
     throw new Error(getErrorMessage(error));
   }

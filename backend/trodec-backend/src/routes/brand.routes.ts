@@ -25,6 +25,7 @@ router.get('/me/stats',           authenticate, requireRole('brand_admin'), bran
 router.get('/me/orders',          authenticate, requireRole('brand_admin'), brandController.getMyOrders);
 router.get('/me/pickup-settings', authenticate, requireRole('brand_admin'), brandController.getPickupSettings);
 router.put('/me/pickup-settings', authenticate, requireRole('brand_admin'), validateBody(updatePickupSettingsSchema), brandController.updatePickupSettings);
+router.post('/me/sync-pickup', authenticate, requireRole('brand_admin'), brandController.syncPickupLocation.bind(brandController));
 router.get('/me/earnings',        authenticate, requireRole('brand_admin'), brandController.getEarnings);
 router.get('/me/bank-accounts',   authenticate, requireRole('brand_admin'), brandController.getBankAccounts);
 router.post('/me/bank-accounts',  authenticate, requireRole('brand_admin'), brandController.saveBankAccount);

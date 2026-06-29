@@ -287,6 +287,34 @@ export async function requestBrandWithdrawal(data: {
 }
 
 // ============================================
+// Pickup / Shiprocket sync
+// ============================================
+
+export interface ShiprocketPickupSettings {
+  shiprocketPickupLocation: string | null;
+  pickupAddress: Record<string, unknown> | null;
+  shiprocketLocations: Array<{ name: string; city: string; status: number }>;
+}
+
+export async function getPickupSettings(): Promise<ShiprocketPickupSettings> {
+  try {
+    const response = await api.get<ApiSuccessResponse<ShiprocketPickupSettings>>('/brands/me/pickup-settings');
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function syncPickupLocation(): Promise<ShiprocketPickupSettings> {
+  try {
+    const response = await api.post<ApiSuccessResponse<ShiprocketPickupSettings>>('/brands/me/sync-pickup');
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+// ============================================
 // Legacy BrandService object for compatibility
 // ============================================
 
