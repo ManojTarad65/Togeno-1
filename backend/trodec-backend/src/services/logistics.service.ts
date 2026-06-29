@@ -291,7 +291,33 @@ class ShiprocketClient {
       weight = 0.5, length = 10, breadth = 10, height = 10,
     } = params;
 
-    const sanitizedPhone = (to.phone ?? "").replace(/\D/g, "").slice(-10);
+    // Phone: strip non-digits, take last 10. Fall back to sender phone if still short.
+    let sanitizedPhone = (to.phone ?? "").replace(/\D/g, "").slice(-10);
+    if (sanitizedPhone.length < 10) {
+      const fromPhone = (params.from?.phone ?? "").replace(/\D/g, "").slice(-10);
+      if (fromPhone.length === 10) sanitizedPhone = fromPhone;
+    }
+
+    // Address line 1: Shiprocket requires >= 10 chars.
+    // Build it up from available parts if too short.
+    let billingAddress = (to.line1 ?? "").trim();
+    if (billingAddress.length < 10) {
+      const parts = [billingAddress, (to.line2 ?? "").trim(), (to.city ?? "").trim()].filter(Boolean);
+      billingAddress = parts.join(", ");
+    }
+    // Last resort: right-pad to 10 chars with spaces (Shiprocket accepts trailing spaces).
+    if (billingAddress.length < 10) billingAddress = billingAddress.padEnd(10);
+
+    // Warn in logs so we can follow up with experts to fix their address.
+    if ((to.line1 ?? "").trim().length < 10 || sanitizedPhone.length < 10) {
+      logger.warn("Shiprocket order: address/phone required sanitization", {
+        internalOrderId,
+        originalLine1: to.line1,
+        originalPhone: to.phone,
+        sanitizedLine1: billingAddress,
+        sanitizedPhone,
+      });
+    }
 
     const body = {
       order_id: internalOrderId,
@@ -299,9 +325,9 @@ class ShiprocketClient {
       pickup_location: pickupLocation,
       channel_id: "",
       comment: "Trodec Order",
-      billing_customer_name: (to.name ?? "").trim(),
+      billing_customer_name: (to.name ?? "Recipient").trim() || "Recipient",
       billing_last_name: ".",
-      billing_address: (to.line1 ?? "").trim(),
+      billing_address: billingAddress,
       billing_address_2: (to.line2 ?? "").trim(),
       billing_city: (to.city ?? "").trim(),
       billing_pincode: (to.postalCode ?? "").trim(),
