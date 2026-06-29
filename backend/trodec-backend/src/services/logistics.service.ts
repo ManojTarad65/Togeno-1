@@ -156,18 +156,27 @@ class ShiprocketClient {
   private token: string | null = null;
   private tokenExpiry: number = 0;
   private tokenRefreshPromise: Promise<string> | null = null;
-  private loginFailedAt: number = 0;
-  private static readonly LOGIN_COOLDOWN_MS = 60_000;
+  private loginCooldownUntil: number = 0;
+  // After any failed login, wait 15 min before retrying.
+  // If Shiprocket says the account is locked, wait 3 hours.
+  private static readonly LOGIN_COOLDOWN_MS     = 15 * 60_000;       // 15 min
+  private static readonly ACCOUNT_LOCKED_MS     =  3 * 60 * 60_000;  // 3 hr
 
   private async getToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.token && Date.now() < this.tokenExpiry) {
       return this.token;
     }
 
+    // If a cooldown is active, fail fast — don't hammer Shiprocket.
+    const cooldownRemaining = this.loginCooldownUntil - Date.now();
+    if (cooldownRemaining > 0) {
+      const mins = Math.ceil(cooldownRemaining / 60_000);
+      logger.warn("Shiprocket login suppressed — cooldown active", { retryInMinutes: mins });
+      throw ApiError.internal(`Shiprocket login suppressed — account cooldown active (${mins} min remaining)`);
+    }
+
     if (forceRefresh) {
       this.token = null;
-      // Don't clear tokenRefreshPromise — reuse any in-flight login rather than
-      // firing a second concurrent request. A new one starts only if none is running.
     }
 
     if (!this.tokenRefreshPromise) {
@@ -183,14 +192,6 @@ class ShiprocketClient {
   }
 
   private async _doLogin(): Promise<string> {
-    const cooldownRemaining = this.loginFailedAt + ShiprocketClient.LOGIN_COOLDOWN_MS - Date.now();
-    if (cooldownRemaining > 0) {
-      logger.warn("Shiprocket login suppressed — cooldown active after recent failure", {
-        retryInSeconds: Math.ceil(cooldownRemaining / 1000),
-      });
-      throw ApiError.internal(`Shiprocket login suppressed (cooldown ${Math.ceil(cooldownRemaining / 1000)}s remaining) — too many recent failures`);
-    }
-
     logger.info("Shiprocket login attempt", { email: env.SHIPROCKET_EMAIL });
 
     const res = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
@@ -205,12 +206,23 @@ class ShiprocketClient {
     const json = (await res.json()) as { token?: string; message?: string };
 
     if (!res.ok || !json.token) {
-      this.loginFailedAt = Date.now();
-      logger.error("Shiprocket auth failed — cooldown started", { status: res.status, message: json.message });
-      throw ApiError.internal("Shiprocket authentication failed");
+      const msg = (json.message ?? "").toLowerCase();
+      const isLocked = msg.includes("lock") || msg.includes("block") || msg.includes("suspend") || msg.includes("temporar");
+      const cooldownMs = isLocked ? ShiprocketClient.ACCOUNT_LOCKED_MS : ShiprocketClient.LOGIN_COOLDOWN_MS;
+      this.loginCooldownUntil = Date.now() + cooldownMs;
+      logger.error("Shiprocket auth failed — cooldown applied", {
+        status: res.status,
+        message: json.message,
+        cooldownMinutes: Math.ceil(cooldownMs / 60_000),
+        isLocked,
+      });
+      throw ApiError.internal(isLocked
+        ? `Shiprocket account temporarily locked — retrying in ${Math.ceil(cooldownMs / 60_000)} min`
+        : "Shiprocket authentication failed"
+      );
     }
 
-    this.loginFailedAt = 0;
+    this.loginCooldownUntil = 0;
     this.token = json.token;
     this.tokenExpiry = Date.now() + TOKEN_TTL_MS;
     logger.info("Shiprocket token refreshed successfully");
@@ -228,7 +240,7 @@ class ShiprocketClient {
       body: JSON.stringify(body),
     });
 
-    if (res.status === 401 && retry) {
+    if (res.status === 401 && retry && this.loginCooldownUntil <= Date.now()) {
       await this.getToken(true);
       return this.post<T>(path, body, false);
     }
@@ -247,7 +259,7 @@ class ShiprocketClient {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (res.status === 401 && retry) {
+    if (res.status === 401 && retry && this.loginCooldownUntil <= Date.now()) {
       await this.getToken(true);
       return this.get<T>(path, false);
     }
