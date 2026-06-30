@@ -26,10 +26,11 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().min(1),
   RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
 
-  // Shiprocket — strip surrounding quotes Hostinger may inject (e.g. "value" → value)
-  SHIPROCKET_EMAIL: z.string().min(1).transform(v => v.trim().replace(/^["']|["']$/g, '')),
-  SHIPROCKET_PASSWORD: z.string().min(1).transform(v => v.trim().replace(/^["']|["']$/g, '')),
-  SHIPROCKET_WEBHOOK_TOKEN: z.string().optional().transform(v => v?.trim().replace(/^["']|["']$/g, '')),
+  // Hostinger escapes special chars with backslashes (e.g. % → \%, # → \#, ! → \!)
+  // Strip surrounding quotes and unescape backslash-prefixed special chars.
+  SHIPROCKET_EMAIL: z.string().min(1).transform(v => v.trim().replace(/^["']|["']$/g, '').replace(/\\([%#!$@&*^])/g, '$1')),
+  SHIPROCKET_PASSWORD: z.string().min(1).transform(v => v.trim().replace(/^["']|["']$/g, '').replace(/\\([%#!$@&*^])/g, '$1')),
+  SHIPROCKET_WEBHOOK_TOKEN: z.string().optional().transform(v => v?.trim().replace(/^["']|["']$/g, '').replace(/\\([%#!$@&*^])/g, '$1')),
 
   // CORS
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
