@@ -49,6 +49,13 @@ router.get('/shiprocket/pickup-locations', adminController.getShiprocketPickupLo
 router.get('/shiprocket/status', adminController.getShiprocketStatus.bind(adminController));
 
 /**
+ * POST /admin/shiprocket/test-login
+ * Force a fresh Shiprocket login attempt (bypasses cooldown). Returns raw Shiprocket response.
+ * Admin diagnostic only — use when credentials may have changed.
+ */
+router.post('/shiprocket/test-login', adminController.testShiprocketLogin.bind(adminController));
+
+/**
  * GET /admin/brands
  * List all brands
  */

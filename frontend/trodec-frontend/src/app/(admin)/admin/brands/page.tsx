@@ -24,9 +24,11 @@ import {
   getAdminShiprocketLocations,
   assignBrandPickupLocation,
   getShiprocketStatus,
+  testShiprocketLogin,
   AdminUserRow,
   ShiprocketLocation,
   ShiprocketStatus,
+  ShiprocketTestLoginResult,
   PaginatedResult,
 } from "@/services/admin.service";
 
@@ -47,6 +49,8 @@ export default function AdminBrandsPage() {
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [srStatus, setSrStatus] = useState<ShiprocketStatus | null>(null);
   const [srStatusLoading, setSrStatusLoading] = useState(false);
+  const [testLoginResult, setTestLoginResult] = useState<ShiprocketTestLoginResult | null>(null);
+  const [testLoginLoading, setTestLoginLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -92,6 +96,23 @@ export default function AdminBrandsPage() {
       setSrStatus(null);
     } finally {
       setSrStatusLoading(false);
+    }
+  }
+
+  async function handleTestLogin() {
+    setTestLoginLoading(true);
+    setTestLoginResult(null);
+    try {
+      const result = await testShiprocketLogin();
+      setTestLoginResult(result);
+      if (result.success) {
+        toast.success("Shiprocket login succeeded! Token saved.");
+        await loadShiprocketStatus();
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Test login failed");
+    } finally {
+      setTestLoginLoading(false);
     }
   }
 
@@ -165,48 +186,77 @@ export default function AdminBrandsPage() {
       </div>
 
       {/* Shiprocket Status Banner */}
-      <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border text-sm ${
+      <div className={`flex flex-col gap-3 px-4 py-3 rounded-lg border text-sm ${
         srStatusLoading
           ? "border-zinc-700 bg-zinc-900/50 text-zinc-500"
           : srStatus?.shiprocketConnected
           ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400"
           : "border-red-500/20 bg-red-500/5 text-red-400"
       }`}>
-        {srStatusLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin shrink-0 mt-0.5" />
-        ) : srStatus?.shiprocketConnected ? (
-          <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-        ) : (
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-        )}
-        <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-3">
           {srStatusLoading ? (
-            <span>Checking Shiprocket connection…</span>
+            <Loader2 className="h-4 w-4 animate-spin shrink-0 mt-0.5" />
           ) : srStatus?.shiprocketConnected ? (
-            <span>Shiprocket connected — orders will be placed successfully.</span>
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
           ) : (
-            <div className="space-y-1">
-              <p className="font-medium">Shiprocket not connected — orders cannot be placed.</p>
-              {srStatus?.tokenError && (
-                <p className="text-xs text-red-300/70 wrap-break-word">{srStatus.tokenError}</p>
-              )}
-              {srStatus && !srStatus.appSettingsTableExists && (
-                <p className="text-xs text-red-300/70">Migration <code>025_app_settings.sql</code> has not been run — run it in Supabase SQL editor.</p>
-              )}
-              {srStatus?.appSettingsTableExists && !srStatus.tokenCachedInDb && (
-                <p className="text-xs text-red-300/70">No token cached in DB — a fresh Shiprocket login will be attempted on next request.</p>
-              )}
-            </div>
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           )}
+          <div className="flex-1 min-w-0">
+            {srStatusLoading ? (
+              <span>Checking Shiprocket connection…</span>
+            ) : srStatus?.shiprocketConnected ? (
+              <span>Shiprocket connected — orders will be placed successfully.</span>
+            ) : (
+              <div className="space-y-1">
+                <p className="font-medium">Shiprocket not connected — orders cannot be placed.</p>
+                {srStatus?.tokenError && (
+                  <p className="text-xs text-red-300/70">{srStatus.tokenError}</p>
+                )}
+                {srStatus && !srStatus.appSettingsTableExists && (
+                  <p className="text-xs text-red-300/70">Migration <code>025_app_settings.sql</code> has not been run — run it in Supabase SQL editor.</p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {!srStatus?.shiprocketConnected && !srStatusLoading && (
+              <button
+                onClick={handleTestLogin}
+                disabled={testLoginLoading}
+                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                title="Bypass cooldown and test credentials now"
+              >
+                {testLoginLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                Test Login
+              </button>
+            )}
+            <button
+              onClick={loadShiprocketStatus}
+              disabled={srStatusLoading}
+              className="text-zinc-500 hover:text-zinc-300 transition"
+              title="Refresh status"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${srStatusLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
         </div>
-        <button
-          onClick={loadShiprocketStatus}
-          disabled={srStatusLoading}
-          className="shrink-0 text-zinc-500 hover:text-zinc-300 transition"
-          title="Refresh status"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${srStatusLoading ? "animate-spin" : ""}`} />
-        </button>
+
+        {/* Test Login Result */}
+        {testLoginResult && (
+          <div className={`text-xs rounded px-3 py-2 border font-mono space-y-0.5 ${
+            testLoginResult.success
+              ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-300"
+              : "bg-red-500/5 border-red-500/20 text-red-300"
+          }`}>
+            <p className="font-semibold non-mono">{testLoginResult.success ? "Login succeeded" : "Login failed"}</p>
+            <p>Email sent: <span className="text-zinc-300">{testLoginResult.emailUsed}</span></p>
+            <p>Password length: <span className="text-zinc-300">{testLoginResult.passwordLength} chars</span></p>
+            <p>HTTP status: <span className="text-zinc-300">{testLoginResult.httpStatus}</span></p>
+            {testLoginResult.shiprocketMessage && (
+              <p>Shiprocket says: <span className="text-zinc-300">&quot;{testLoginResult.shiprocketMessage}&quot;</span></p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabs + Search */}

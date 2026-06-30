@@ -450,17 +450,9 @@ class AdminController {
    */
   async getShiprocketStatus(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Try to get a token (will use persisted one if valid)
-      let tokenOk = false;
-      let tokenError: string | null = null;
-      try {
-        await shiprocketClient.getPickupLocations(); // lightweight call to verify auth
-        tokenOk = true;
-      } catch (err: any) {
-        tokenError = err?.message ?? String(err);
-      }
+      // Read-only: never triggers a login attempt — just reports cached state
+      const cached = await shiprocketClient.getCachedStatus();
 
-      // Check app_settings table exists
       let appSettingsOk = false;
       let tokenCachedInDb = false;
       try {
@@ -472,12 +464,29 @@ class AdminController {
         appSettingsOk = false;
       }
 
+      let tokenError: string | null = null;
+      if (cached.cooldownMinutesRemaining > 0) {
+        tokenError = `Shiprocket login suppressed — account cooldown active (${cached.cooldownMinutesRemaining} min remaining)`;
+      } else if (!cached.hasValidToken) {
+        tokenError = 'No valid token — a fresh Shiprocket login will be attempted on next request';
+      }
+
       sendSuccess(res, {
-        shiprocketConnected: tokenOk,
+        shiprocketConnected: cached.hasValidToken,
         tokenError,
         appSettingsTableExists: appSettingsOk,
         tokenCachedInDb,
+        cooldownMinutesRemaining: cached.cooldownMinutesRemaining,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async testShiprocketLogin(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await shiprocketClient.forceTestLogin();
+      sendSuccess(res, result);
     } catch (error) {
       next(error);
     }

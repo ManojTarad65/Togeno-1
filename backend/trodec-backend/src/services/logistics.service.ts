@@ -154,6 +154,7 @@ const TOKEN_TTL_MS = 9 * 24 * 60 * 60 * 1000;
 
 const SUPABASE_TOKEN_KEY    = "shiprocket_token";
 const SUPABASE_EXPIRY_KEY   = "shiprocket_token_expiry";
+const SUPABASE_COOLDOWN_KEY = "shiprocket_cooldown_until";
 
 class ShiprocketClient {
   private token: string | null = null;
@@ -165,15 +166,24 @@ class ShiprocketClient {
   private static readonly LOGIN_COOLDOWN_MS     = 15 * 60_000;       // 15 min
   private static readonly ACCOUNT_LOCKED_MS     =  3 * 60 * 60_000;  // 3 hr
 
-  // Load a previously-saved token from Supabase so server restarts don't need a new login.
+  // Load a previously-saved token (and cooldown) from Supabase so server restarts don't need a new login.
   private async _loadPersistedToken(): Promise<void> {
     try {
-      const [tokenRow, expiryRow] = await Promise.all([
+      const [tokenRow, expiryRow, cooldownRow] = await Promise.all([
         supabaseAdmin.from("app_settings").select("value").eq("key", SUPABASE_TOKEN_KEY).maybeSingle(),
         supabaseAdmin.from("app_settings").select("value").eq("key", SUPABASE_EXPIRY_KEY).maybeSingle(),
+        supabaseAdmin.from("app_settings").select("value").eq("key", SUPABASE_COOLDOWN_KEY).maybeSingle(),
       ]);
-      const savedToken  = (tokenRow.data as any)?.value as string | null;
-      const savedExpiry = parseInt((expiryRow.data as any)?.value ?? "0", 10);
+      const savedToken    = (tokenRow.data as any)?.value as string | null;
+      const savedExpiry   = parseInt((expiryRow.data as any)?.value ?? "0", 10);
+      const savedCooldown = parseInt((cooldownRow.data as any)?.value ?? "0", 10);
+
+      // Restore cooldown so a server restart can't bypass it
+      if (savedCooldown > Date.now()) {
+        this.loginCooldownUntil = savedCooldown;
+        logger.info("Shiprocket cooldown restored from Supabase", { retryAt: new Date(savedCooldown) });
+      }
+
       if (savedToken && savedExpiry > Date.now() + 60_000) {
         this.token       = savedToken;
         this.tokenExpiry = savedExpiry;
@@ -248,6 +258,8 @@ class ShiprocketClient {
       const isLocked = msg.includes("lock") || msg.includes("block") || msg.includes("suspend") || msg.includes("temporar");
       const cooldownMs = isLocked ? ShiprocketClient.ACCOUNT_LOCKED_MS : ShiprocketClient.LOGIN_COOLDOWN_MS;
       this.loginCooldownUntil = Date.now() + cooldownMs;
+      // Persist so server restarts don't bypass this cooldown
+      void supabaseAdmin.from("app_settings").upsert({ key: SUPABASE_COOLDOWN_KEY, value: String(this.loginCooldownUntil), updated_at: new Date().toISOString() });
       logger.error("Shiprocket auth failed — cooldown applied", {
         status: res.status,
         message: json.message,
@@ -261,6 +273,8 @@ class ShiprocketClient {
     }
 
     this.loginCooldownUntil = 0;
+    // Clear persisted cooldown now that login succeeded
+    void supabaseAdmin.from("app_settings").upsert({ key: SUPABASE_COOLDOWN_KEY, value: "0", updated_at: new Date().toISOString() });
     this.token = json.token;
     this.tokenExpiry = Date.now() + TOKEN_TTL_MS;
     logger.info("Shiprocket token refreshed successfully");
@@ -310,6 +324,69 @@ class ShiprocketClient {
       throw ApiError.internal((json as any).message ?? "Shiprocket request failed");
     }
     return json;
+  }
+
+  // -------------------------------------------------------------------------
+  // Read-only status — never triggers a login attempt
+  // -------------------------------------------------------------------------
+
+  async getCachedStatus(): Promise<{
+    hasValidToken: boolean;
+    cooldownMinutesRemaining: number;
+    cooldownUntil: number;
+  }> {
+    // Always read from DB so the caller sees up-to-date state even before
+    // any real API call has been made in this process lifetime.
+    await this._loadPersistedToken();
+    const now = Date.now();
+    const cooldownRemaining = Math.max(0, this.loginCooldownUntil - now);
+    return {
+      hasValidToken: !!(this.token && now < this.tokenExpiry),
+      cooldownMinutesRemaining: Math.ceil(cooldownRemaining / 60_000),
+      cooldownUntil: this.loginCooldownUntil,
+    };
+  }
+
+  // Force a fresh login attempt regardless of cooldown — returns raw Shiprocket response.
+  // Admin-only diagnostic: bypasses cooldown, does NOT set a new cooldown on failure.
+  async forceTestLogin(): Promise<{
+    success: boolean;
+    shiprocketMessage: string | null;
+    httpStatus: number;
+    emailUsed: string;
+    passwordLength: number;
+  }> {
+    const emailUsed = env.SHIPROCKET_EMAIL ?? "(not set)";
+    const passwordLength = (env.SHIPROCKET_PASSWORD ?? "").length;
+
+    let httpStatus = 0;
+    let shiprocketMessage: string | null = null;
+    try {
+      const res = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: env.SHIPROCKET_EMAIL, password: env.SHIPROCKET_PASSWORD }),
+      });
+      httpStatus = res.status;
+      const json = (await res.json()) as { token?: string; message?: string };
+      shiprocketMessage = json.message ?? null;
+
+      if (res.ok && json.token) {
+        // Real success — persist the token so the app benefits immediately
+        this.loginCooldownUntil = 0;
+        this.token = json.token;
+        this.tokenExpiry = Date.now() + TOKEN_TTL_MS;
+        void this._persistToken(this.token, this.tokenExpiry);
+        void supabaseAdmin.from("app_settings").upsert({ key: SUPABASE_COOLDOWN_KEY, value: "0", updated_at: new Date().toISOString() });
+        logger.info("Shiprocket force-test-login succeeded");
+        return { success: true, shiprocketMessage, httpStatus, emailUsed, passwordLength };
+      }
+      logger.warn("Shiprocket force-test-login failed", { httpStatus, shiprocketMessage, emailUsed, passwordLength });
+      return { success: false, shiprocketMessage, httpStatus, emailUsed, passwordLength };
+    } catch (err: any) {
+      logger.error("Shiprocket force-test-login threw", { err: err?.message });
+      return { success: false, shiprocketMessage: err?.message ?? String(err), httpStatus, emailUsed, passwordLength };
+    }
   }
 
   // -------------------------------------------------------------------------

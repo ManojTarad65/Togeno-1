@@ -401,6 +401,23 @@ export async function getShiprocketStatus(): Promise<ShiprocketStatus> {
   }
 }
 
+export interface ShiprocketTestLoginResult {
+  success: boolean;
+  shiprocketMessage: string | null;
+  httpStatus: number;
+  emailUsed: string;
+  passwordLength: number;
+}
+
+export async function testShiprocketLogin(): Promise<ShiprocketTestLoginResult> {
+  try {
+    const res = await api.post<ApiSuccessResponse<ShiprocketTestLoginResult>>('/admin/shiprocket/test-login');
+    return res.data.data;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
 export async function getAdminShiprocketLocations(): Promise<ShiprocketLocation[]> {
   try {
     const res = await api.get<ApiSuccessResponse<ShiprocketLocation[]>>('/admin/shiprocket/pickup-locations');
