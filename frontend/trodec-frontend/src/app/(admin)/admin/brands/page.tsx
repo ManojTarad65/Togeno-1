@@ -250,7 +250,7 @@ export default function AdminBrandsPage() {
           }`}>
             <p className="font-semibold non-mono">{testLoginResult.success ? "Login succeeded" : "Login failed"}</p>
             <p>Email sent: <span className="text-zinc-300">{testLoginResult.emailUsed}</span></p>
-            <p>Password length: <span className="text-zinc-300">{testLoginResult.passwordLength} chars</span></p>
+            <p>Password length (sent): <span className="text-zinc-300">{testLoginResult.passwordLength} chars</span>{testLoginResult.rawPasswordLength !== testLoginResult.passwordLength && <span className="text-amber-400"> (raw in env: {testLoginResult.rawPasswordLength} chars — whitespace was trimmed)</span>}</p>
             <p>HTTP status: <span className="text-zinc-300">{testLoginResult.httpStatus}</span></p>
             {testLoginResult.shiprocketMessage && (
               <p>Shiprocket says: <span className="text-zinc-300">&quot;{testLoginResult.shiprocketMessage}&quot;</span></p>

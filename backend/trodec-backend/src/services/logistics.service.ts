@@ -240,15 +240,14 @@ class ShiprocketClient {
   }
 
   private async _doLogin(): Promise<string> {
-    logger.info("Shiprocket login attempt", { email: env.SHIPROCKET_EMAIL });
+    const email    = (env.SHIPROCKET_EMAIL    ?? "").trim();
+    const password = (env.SHIPROCKET_PASSWORD ?? "").trim();
+    logger.info("Shiprocket login attempt", { email, passwordLength: password.length });
 
     const res = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: env.SHIPROCKET_EMAIL,
-        password: env.SHIPROCKET_PASSWORD,
-      }),
+      body: JSON.stringify({ email, password }),
     });
 
     const json = (await res.json()) as { token?: string; message?: string };
@@ -355,9 +354,12 @@ class ShiprocketClient {
     httpStatus: number;
     emailUsed: string;
     passwordLength: number;
+    rawPasswordLength: number;
   }> {
-    const emailUsed = env.SHIPROCKET_EMAIL ?? "(not set)";
-    const passwordLength = (env.SHIPROCKET_PASSWORD ?? "").length;
+    const emailUsed = (env.SHIPROCKET_EMAIL ?? "").trim();
+    const rawPasswordLength = (env.SHIPROCKET_PASSWORD ?? "").length;
+    const password = (env.SHIPROCKET_PASSWORD ?? "").trim();
+    const passwordLength = password.length;
 
     let httpStatus = 0;
     let shiprocketMessage: string | null = null;
@@ -365,7 +367,7 @@ class ShiprocketClient {
       const res = await fetch(`${SHIPROCKET_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: env.SHIPROCKET_EMAIL, password: env.SHIPROCKET_PASSWORD }),
+        body: JSON.stringify({ email: emailUsed, password }),
       });
       httpStatus = res.status;
       const json = (await res.json()) as { token?: string; message?: string };
@@ -379,13 +381,13 @@ class ShiprocketClient {
         void this._persistToken(this.token, this.tokenExpiry);
         void supabaseAdmin.from("app_settings").upsert({ key: SUPABASE_COOLDOWN_KEY, value: "0", updated_at: new Date().toISOString() });
         logger.info("Shiprocket force-test-login succeeded");
-        return { success: true, shiprocketMessage, httpStatus, emailUsed, passwordLength };
+        return { success: true, shiprocketMessage, httpStatus, emailUsed, passwordLength, rawPasswordLength };
       }
-      logger.warn("Shiprocket force-test-login failed", { httpStatus, shiprocketMessage, emailUsed, passwordLength });
-      return { success: false, shiprocketMessage, httpStatus, emailUsed, passwordLength };
+      logger.warn("Shiprocket force-test-login failed", { httpStatus, shiprocketMessage, emailUsed, passwordLength, rawPasswordLength });
+      return { success: false, shiprocketMessage, httpStatus, emailUsed, passwordLength, rawPasswordLength };
     } catch (err: any) {
       logger.error("Shiprocket force-test-login threw", { err: err?.message });
-      return { success: false, shiprocketMessage: err?.message ?? String(err), httpStatus, emailUsed, passwordLength };
+      return { success: false, shiprocketMessage: err?.message ?? String(err), httpStatus, emailUsed, passwordLength, rawPasswordLength };
     }
   }
 

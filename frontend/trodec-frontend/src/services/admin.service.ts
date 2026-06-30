@@ -407,6 +407,7 @@ export interface ShiprocketTestLoginResult {
   httpStatus: number;
   emailUsed: string;
   passwordLength: number;
+  rawPasswordLength: number;
 }
 
 export async function testShiprocketLogin(): Promise<ShiprocketTestLoginResult> {
